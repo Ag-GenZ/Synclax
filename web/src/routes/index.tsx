@@ -6,6 +6,7 @@ import { useState, useCallback } from "react";
 import {
   ActivityIcon,
   AlertCircleIcon,
+  BarChart3Icon,
   CheckCircle2Icon,
   ChevronDownIcon,
   ChevronRightIcon,
@@ -159,6 +160,34 @@ function fmtDueIn(iso: string): string {
   return `in ${Math.floor(s / 3600)}h`;
 }
 
+type ActivityItem = {
+  issueId: string;
+  identifier: string;
+  title: string;
+  ts: string;
+  event: string;
+  message?: string | null;
+};
+
+function collectActivity(running: Array<SymphonyRunningEntry>): Array<ActivityItem> {
+  const out: Array<ActivityItem> = [];
+  for (const entry of running) {
+    const log = entry.live.event_log ?? [];
+    for (const ev of log) {
+      out.push({
+        issueId: entry.issue_id,
+        identifier: entry.issue.identifier,
+        title: entry.issue.title,
+        ts: ev.ts,
+        event: ev.event,
+        message: ev.message ?? null,
+      });
+    }
+  }
+  out.sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime());
+  return out.slice(0, 200);
+}
+
 function statusVariant(status: string):
   | "success"
   | "error"
@@ -295,7 +324,7 @@ function AgentCard({ entry }: { entry: SymphonyRunningEntry }) {
         </div>
 
         {/* Last event */}
-        {live.last_codex_message && (
+        {(live.last_codex_message || live.last_codex_event || live.last_codex_timestamp) && (
           <div className="rounded-md border bg-muted/30 px-3 py-2">
             <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground mb-1">
               <ActivityIcon className="size-3" />
@@ -304,9 +333,13 @@ function AgentCard({ entry }: { entry: SymphonyRunningEntry }) {
                 <span className="ml-auto tabular-nums">{fmtAgo(live.last_codex_timestamp)}</span>
               )}
             </div>
-            <p className="text-xs font-mono leading-relaxed line-clamp-2">
-              {live.last_codex_message}
-            </p>
+            {live.last_codex_message ? (
+              <p className="text-xs font-mono leading-relaxed line-clamp-2">
+                {live.last_codex_message}
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground">—</p>
+            )}
           </div>
         )}
 
@@ -404,6 +437,37 @@ function RetryRow({ entry }: { entry: SymphonyRetryEntry }) {
               </span>
             </TooltipTrigger>
             <TooltipPopup className="max-w-sm break-words">{entry.error}</TooltipPopup>
+          </Tooltip>
+        ) : (
+          <span className="text-muted-foreground text-sm">—</span>
+        )}
+      </TableCell>
+    </TableRow>
+  );
+}
+
+function ActivityRow({ entry }: { entry: ActivityItem }) {
+  return (
+    <TableRow>
+      <TableCell className="font-mono text-xs font-semibold text-[var(--lagoon-deep)]">
+        {entry.identifier}
+      </TableCell>
+      <TableCell className="tabular-nums text-sm text-muted-foreground">
+        <Tooltip>
+          <TooltipTrigger>{fmtAgo(entry.ts)}</TooltipTrigger>
+          <TooltipPopup>{new Date(entry.ts).toLocaleString()}</TooltipPopup>
+        </Tooltip>
+      </TableCell>
+      <TableCell className="font-mono text-xs text-muted-foreground">{entry.event}</TableCell>
+      <TableCell className="max-w-xs">
+        {entry.message ? (
+          <Tooltip>
+            <TooltipTrigger>
+              <span className="block max-w-[360px] truncate font-mono text-xs">
+                {entry.message}
+              </span>
+            </TooltipTrigger>
+            <TooltipPopup className="max-w-md break-words">{entry.message}</TooltipPopup>
           </Tooltip>
         ) : (
           <span className="text-muted-foreground text-sm">—</span>
@@ -722,7 +786,7 @@ function SymphonyDashboard() {
     dataUpdatedAt,
   } = useQuery({
     ...getSymphonySnapshotOptions(),
-    refetchInterval: 2000,
+    refetchInterval: 1000,
   });
 
   const { mutate: doStart, isPending: isStarting } = useMutation({
@@ -763,6 +827,8 @@ function SymphonyDashboard() {
   const rateLimits = snapshot?.rate_limits;
   const hasRateLimits = rateLimits && Object.keys(rateLimits).length > 0;
   const isLoading = healthLoading || snapLoading;
+  const activity = snapshot ? collectActivity(snapshot.running) : [];
+  const activityCount = activity.length;
 
   return (
     <SidebarProvider defaultOpen>
@@ -908,7 +974,7 @@ function SymphonyDashboard() {
           </header>
 
           <ScrollArea className="flex-1">
-            <div className="p-6 space-y-6 max-w-5xl">
+            <div className="p-6 space-y-6 max-w-5xl mx-auto">
               {/* Error */}
               {(healthError || snapError) && (
                 <Alert variant="error">
@@ -991,6 +1057,15 @@ function SymphonyDashboard() {
                       </Badge>
                     )}
                   </TabsTab>
+                  <TabsTab value="activity" className="gap-1.5">
+                    <BarChart3Icon className="size-3.5" />
+                    Activity
+                    {activityCount > 0 && (
+                      <Badge variant="secondary" size="sm" className="ml-1 tabular-nums">
+                        {activityCount}
+                      </Badge>
+                    )}
+                  </TabsTab>
                   <TabsTab value="retrying" className="gap-1.5">
                     <RotateCcwIcon className="size-3.5" />
                     Retry Queue
@@ -1046,6 +1121,43 @@ function SymphonyDashboard() {
                         <AgentCard key={e.issue_id} entry={e} />
                       ))}
                     </div>
+                  )}
+                </TabsPanel>
+
+                {/* Activity */}
+                <TabsPanel value="activity" className="mt-4">
+                  {snapLoading ? (
+                    <Skeleton className="h-40 rounded-xl" />
+                  ) : activity.length === 0 ? (
+                    <div className="rounded-xl border border-dashed p-10 text-center">
+                      <div className="mx-auto mb-3 flex size-10 items-center justify-center rounded-full bg-muted">
+                        <ActivityIcon className="size-5 text-muted-foreground" />
+                      </div>
+                      <p className="text-sm font-medium mb-1">No activity yet</p>
+                      <p className="text-xs text-muted-foreground max-w-sm mx-auto leading-relaxed">
+                        Activity is built from live Codex events while agents are running. If
+                        you don't see anything, check that there is at least one running issue and
+                        that Codex is emitting events.
+                      </p>
+                    </div>
+                  ) : (
+                    <Card className="max-h-120 overflow-y-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Issue</TableHead>
+                            <TableHead>When</TableHead>
+                            <TableHead>Event</TableHead>
+                            <TableHead>Message</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {activity.map((e) => (
+                            <ActivityRow key={`${e.issueId}-${e.ts}-${e.event}`} entry={e} />
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </Card>
                   )}
                 </TabsPanel>
 

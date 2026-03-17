@@ -619,13 +619,35 @@ func (o *Orchestrator) onWorkerUpdate(issueID string, upd agent.Update) {
 		r.Live.LastCodexEvent = &ev
 	}
 
-	// Append to event log (cap at maxEventLog entries).
-	msg := ""
-	if m, ok := upd.Payload["message"].(string); ok && strings.TrimSpace(m) != "" {
-		msg = m
-	} else if m, ok := upd.Payload["text"].(string); ok && strings.TrimSpace(m) != "" {
-		msg = m
+	extractMessage := func(payload map[string]any) string {
+		if payload == nil {
+			return ""
+		}
+		for _, k := range []string{
+			"message",
+			"text",
+			"delta",
+			"summaryTextDelta",
+			"summary_text_delta",
+			"output_text",
+			"content",
+		} {
+			if v, ok := payload[k].(string); ok && strings.TrimSpace(v) != "" {
+				return v
+			}
+		}
+		if item, ok := payload["item"].(map[string]any); ok {
+			for _, k := range []string{"message", "text", "delta", "content"} {
+				if v, ok := item[k].(string); ok && strings.TrimSpace(v) != "" {
+					return v
+				}
+			}
+		}
+		return ""
 	}
+
+	// Append to event log (cap at maxEventLog entries).
+	msg := extractMessage(upd.Payload)
 	if upd.Event != "" || msg != "" {
 		entry := LiveEvent{Timestamp: now, Event: upd.Event, Message: msg}
 		r.Live.EventLog = append(r.Live.EventLog, entry)
@@ -658,12 +680,7 @@ func (o *Orchestrator) onWorkerUpdate(issueID string, upd agent.Update) {
 	if turnCount, ok := intFromAny(upd.Payload["turn_count"]); ok && turnCount > 0 {
 		r.Live.TurnCount = turnCount
 	}
-	if msg, ok := upd.Payload["message"].(string); ok && strings.TrimSpace(msg) != "" {
-		m := msg
-		r.Live.LastCodexMessage = &m
-	}
-	if msg, ok := upd.Payload["text"].(string); ok && strings.TrimSpace(msg) != "" {
-		m := msg
+	if m := strings.TrimSpace(extractMessage(upd.Payload)); m != "" {
 		r.Live.LastCodexMessage = &m
 	}
 
