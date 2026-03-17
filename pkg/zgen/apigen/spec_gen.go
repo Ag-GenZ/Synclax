@@ -42,6 +42,13 @@ type HealthResponse struct {
 	SymphonyWorkflowPath *string `json:"symphony_workflow_path"`
 }
 
+// LiveEvent defines model for LiveEvent.
+type LiveEvent struct {
+	Event   string    `json:"event"`
+	Message *string   `json:"message"`
+	Ts      time.Time `json:"ts"`
+}
+
 // StartSymphonyRequest defines model for StartSymphonyRequest.
 type StartSymphonyRequest struct {
 	// HttpPort Optional Symphony debug HTTP port override. Set to -1 to disable even if WORKFLOW.md sets server.port.
@@ -69,6 +76,28 @@ type SymphonyBlockerRef struct {
 	State      *string `json:"state"`
 }
 
+// SymphonyCompletedEntry defines model for SymphonyCompletedEntry.
+type SymphonyCompletedEntry struct {
+	Attempt           *int32        `json:"attempt"`
+	CodexInputTokens  int32         `json:"codex_input_tokens"`
+	CodexOutputTokens int32         `json:"codex_output_tokens"`
+	CodexTotalTokens  int32         `json:"codex_total_tokens"`
+	DurationSecs      float64       `json:"duration_secs"`
+	EndedAt           time.Time     `json:"ended_at"`
+	Error             *string       `json:"error"`
+	Issue             SymphonyIssue `json:"issue"`
+	IssueId           string        `json:"issue_id"`
+	IssueIdentifier   string        `json:"issue_identifier"`
+	LastCodexEvent    *string       `json:"last_codex_event"`
+	LastCodexMessage  *string       `json:"last_codex_message"`
+	StartedAt         time.Time     `json:"started_at"`
+	Status            string        `json:"status"`
+	ThreadId          *string       `json:"thread_id"`
+	TurnId            *string       `json:"turn_id"`
+	TurnsRun          int32         `json:"turns_run"`
+	WorkspacePath     *string       `json:"workspace_path"`
+}
+
 // SymphonyIssue defines model for SymphonyIssue.
 type SymphonyIssue struct {
 	BlockedBy   *[]SymphonyBlockerRef `json:"blocked_by,omitempty"`
@@ -87,17 +116,18 @@ type SymphonyIssue struct {
 
 // SymphonyLiveSession defines model for SymphonyLiveSession.
 type SymphonyLiveSession struct {
-	CodexAppServerPid  *int32     `json:"codex_app_server_pid"`
-	CodexInputTokens   int32      `json:"codex_input_tokens"`
-	CodexOutputTokens  int32      `json:"codex_output_tokens"`
-	CodexTotalTokens   int32      `json:"codex_total_tokens"`
-	LastCodexEvent     *string    `json:"last_codex_event"`
-	LastCodexMessage   *string    `json:"last_codex_message"`
-	LastCodexTimestamp *time.Time `json:"last_codex_timestamp"`
-	SessionId          *string    `json:"session_id"`
-	ThreadId           *string    `json:"thread_id"`
-	TurnCount          int32      `json:"turn_count"`
-	TurnId             *string    `json:"turn_id"`
+	CodexAppServerPid  *int32       `json:"codex_app_server_pid"`
+	CodexInputTokens   int32        `json:"codex_input_tokens"`
+	CodexOutputTokens  int32        `json:"codex_output_tokens"`
+	CodexTotalTokens   int32        `json:"codex_total_tokens"`
+	EventLog           *[]LiveEvent `json:"event_log,omitempty"`
+	LastCodexEvent     *string      `json:"last_codex_event"`
+	LastCodexMessage   *string      `json:"last_codex_message"`
+	LastCodexTimestamp *time.Time   `json:"last_codex_timestamp"`
+	SessionId          *string      `json:"session_id"`
+	ThreadId           *string      `json:"thread_id"`
+	TurnCount          int32        `json:"turn_count"`
+	TurnId             *string      `json:"turn_id"`
 }
 
 // SymphonyRetryEntry defines model for SymphonyRetryEntry.
@@ -124,10 +154,11 @@ type SymphonyRunningEntry struct {
 
 // SymphonySnapshot defines model for SymphonySnapshot.
 type SymphonySnapshot struct {
-	CodexTotals CodexTotals             `json:"codex_totals"`
-	RateLimits  *map[string]interface{} `json:"rate_limits,omitempty"`
-	Retrying    []SymphonyRetryEntry    `json:"retrying"`
-	Running     []SymphonyRunningEntry  `json:"running"`
+	CodexTotals CodexTotals               `json:"codex_totals"`
+	Completed   *[]SymphonyCompletedEntry `json:"completed,omitempty"`
+	RateLimits  *map[string]interface{}   `json:"rate_limits,omitempty"`
+	Retrying    []SymphonyRetryEntry      `json:"retrying"`
+	Running     []SymphonyRunningEntry    `json:"running"`
 }
 
 // StartSymphonyJSONRequestBody defines body for StartSymphony for application/json ContentType.

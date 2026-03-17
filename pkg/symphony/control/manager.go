@@ -165,6 +165,7 @@ func (m *Manager) Snapshot() map[string]any {
 		return map[string]any{
 			"running":      []any{},
 			"retrying":     []any{},
+			"completed":    []any{},
 			"codex_totals": map[string]any{"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "seconds_running": 0.0},
 			"rate_limits":  map[string]any{},
 		}

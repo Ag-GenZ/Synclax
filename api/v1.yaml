@@ -154,6 +154,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/SymphonyRetryEntry"
+        completed:
+          type: array
+          items:
+            $ref: "#/components/schemas/SymphonyCompletedEntry"
         codex_totals:
           $ref: "#/components/schemas/CodexTotals"
         rate_limits:
@@ -183,6 +187,19 @@ components:
           type: string
         live:
           $ref: "#/components/schemas/SymphonyLiveSession"
+
+    LiveEvent:
+      type: object
+      required: [ts, event]
+      properties:
+        ts:
+          type: string
+          format: date-time
+        event:
+          type: string
+        message:
+          type: string
+          nullable: true
 
     SymphonyLiveSession:
       type: object
@@ -223,6 +240,10 @@ components:
         turn_count:
           type: integer
           format: int32
+        event_log:
+          type: array
+          items:
+            $ref: "#/components/schemas/LiveEvent"
 
     SymphonyRetryEntry:
       type: object
@@ -242,6 +263,62 @@ components:
           type: string
           nullable: true
         delay_type:
+          type: string
+          nullable: true
+
+    SymphonyCompletedEntry:
+      type: object
+      required: [issue, issue_id, issue_identifier, started_at, ended_at, duration_secs, status, codex_input_tokens, codex_output_tokens, codex_total_tokens, turns_run]
+      properties:
+        issue:
+          $ref: "#/components/schemas/SymphonyIssue"
+        issue_id:
+          type: string
+        issue_identifier:
+          type: string
+        attempt:
+          type: integer
+          format: int32
+          nullable: true
+        workspace_path:
+          type: string
+          nullable: true
+        started_at:
+          type: string
+          format: date-time
+        ended_at:
+          type: string
+          format: date-time
+        duration_secs:
+          type: number
+          format: double
+        status:
+          type: string
+        error:
+          type: string
+          nullable: true
+        codex_input_tokens:
+          type: integer
+          format: int32
+        codex_output_tokens:
+          type: integer
+          format: int32
+        codex_total_tokens:
+          type: integer
+          format: int32
+        turns_run:
+          type: integer
+          format: int32
+        thread_id:
+          type: string
+          nullable: true
+        turn_id:
+          type: string
+          nullable: true
+        last_codex_event:
+          type: string
+          nullable: true
+        last_codex_message:
           type: string
           nullable: true
 

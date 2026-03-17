@@ -1,12 +1,15 @@
 package orchestrator
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -44,7 +47,10 @@ type Orchestrator struct {
 	claimed map[string]struct{}
 	retries map[string]*RetryEntry
 
-	completed map[string]struct{}
+	completed        map[string]struct{}
+	completedHistory []CompletedEntry
+
+	stateDir string
 
 	codexTotals     CodexTotals
 	codexRateLimits map[string]any
@@ -131,6 +137,145 @@ func (o *Orchestrator) Run(ctx context.Context, portOverride *int) error {
 	}
 }
 
+type persistedState struct {
+	CodexTotals CodexTotals    `json:"codex_totals"`
+	RateLimits  map[string]any `json:"rate_limits,omitempty"`
+	UpdatedAt   time.Time      `json:"updated_at"`
+}
+
+func (o *Orchestrator) ensureStateDirLocked() {
+	if o.workspace == nil {
+		return
+	}
+	root := strings.TrimSpace(o.workspace.Root())
+	if root == "" {
+		return
+	}
+	dir := filepath.Join(root, ".symphony_state")
+	if o.stateDir == dir {
+		return
+	}
+	_ = os.MkdirAll(dir, 0o755)
+	o.stateDir = dir
+
+	// Best-effort load on (re)bind.
+	o.loadPersistedLocked()
+}
+
+func (o *Orchestrator) statePathLocked(name string) string {
+	if strings.TrimSpace(o.stateDir) == "" {
+		return ""
+	}
+	return filepath.Join(o.stateDir, name)
+}
+
+func (o *Orchestrator) loadPersistedLocked() {
+	// totals
+	totalsPath := o.statePathLocked("totals.json")
+	if totalsPath != "" {
+		b, err := os.ReadFile(totalsPath)
+		if err == nil && len(bytesTrimSpace(b)) > 0 {
+			var st persistedState
+			if json.Unmarshal(b, &st) == nil {
+				o.codexTotals = st.CodexTotals
+				if st.RateLimits != nil {
+					o.codexRateLimits = st.RateLimits
+				}
+			}
+		}
+	}
+
+	// completed history (last N)
+	attemptsPath := o.statePathLocked("attempts.jsonl")
+	if attemptsPath == "" {
+		return
+	}
+	f, err := os.Open(attemptsPath)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	const maxKeep = 200
+	buf := bufio.NewScanner(f)
+	keep := make([]CompletedEntry, 0, maxKeep)
+	for buf.Scan() {
+		line := strings.TrimSpace(buf.Text())
+		if line == "" {
+			continue
+		}
+		var entry CompletedEntry
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			continue
+		}
+		keep = append(keep, entry)
+		if len(keep) > maxKeep {
+			keep = keep[len(keep)-maxKeep:]
+		}
+	}
+	o.completedHistory = keep
+}
+
+func bytesTrimSpace(b []byte) []byte {
+	// avoid pulling bytes just for TrimSpace
+	i := 0
+	for i < len(b) && (b[i] == ' ' || b[i] == '\n' || b[i] == '\r' || b[i] == '\t') {
+		i++
+	}
+	j := len(b) - 1
+	for j >= i && (b[j] == ' ' || b[j] == '\n' || b[j] == '\r' || b[j] == '\t') {
+		j--
+	}
+	if j < i {
+		return nil
+	}
+	return b[i : j+1]
+}
+
+func (o *Orchestrator) persistStateBestEffort(totals CodexTotals, rateLimits map[string]any) {
+	o.mu.Lock()
+	path := o.statePathLocked("totals.json")
+	o.mu.Unlock()
+	if path == "" {
+		return
+	}
+	_ = os.MkdirAll(filepath.Dir(path), 0o755)
+	tmp := path + ".tmp"
+	st := persistedState{
+		CodexTotals: totals,
+		RateLimits:  rateLimits,
+		UpdatedAt:   time.Now().UTC(),
+	}
+	b, err := json.Marshal(st)
+	if err != nil {
+		return
+	}
+	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+		return
+	}
+	_ = os.Rename(tmp, path)
+}
+
+func (o *Orchestrator) appendAttemptBestEffort(entry CompletedEntry) {
+	o.mu.Lock()
+	path := o.statePathLocked("attempts.jsonl")
+	o.mu.Unlock()
+	if path == "" {
+		return
+	}
+	_ = os.MkdirAll(filepath.Dir(path), 0o755)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	b, err := json.Marshal(entry)
+	if err != nil {
+		return
+	}
+	_, _ = f.Write(append(b, '\n'))
+}
+
 func (o *Orchestrator) getPollInterval() time.Duration {
 	o.mu.Lock()
 	defer o.mu.Unlock()
@@ -163,6 +308,7 @@ func (o *Orchestrator) applyRuntimeLocked(portOverride *int) error {
 		return err
 	}
 	o.workspace = ws
+	o.ensureStateDirLocked()
 
 	tr, err := linear.New(linear.Options{
 		Endpoint:     o.cfg.Tracker.Endpoint,
@@ -473,6 +619,21 @@ func (o *Orchestrator) onWorkerUpdate(issueID string, upd agent.Update) {
 		r.Live.LastCodexEvent = &ev
 	}
 
+	// Append to event log (cap at maxEventLog entries).
+	msg := ""
+	if m, ok := upd.Payload["message"].(string); ok && strings.TrimSpace(m) != "" {
+		msg = m
+	} else if m, ok := upd.Payload["text"].(string); ok && strings.TrimSpace(m) != "" {
+		msg = m
+	}
+	if upd.Event != "" || msg != "" {
+		entry := LiveEvent{Timestamp: now, Event: upd.Event, Message: msg}
+		r.Live.EventLog = append(r.Live.EventLog, entry)
+		if len(r.Live.EventLog) > maxEventLog {
+			r.Live.EventLog = r.Live.EventLog[len(r.Live.EventLog)-maxEventLog:]
+		}
+	}
+
 	if upd.Payload == nil {
 		return
 	}
@@ -506,6 +667,19 @@ func (o *Orchestrator) onWorkerUpdate(issueID string, upd agent.Update) {
 		r.Live.LastCodexMessage = &m
 	}
 
+	// Token update emitted by worker after each turn.
+	if upd.Event == "symphony/token_update" {
+		if v, ok := intFromAny(upd.Payload["input_tokens"]); ok {
+			r.Live.CodexInputTokens = v
+		}
+		if v, ok := intFromAny(upd.Payload["output_tokens"]); ok {
+			r.Live.CodexOutputTokens = v
+		}
+		if v, ok := intFromAny(upd.Payload["total_tokens"]); ok {
+			r.Live.CodexTotalTokens = v
+		}
+	}
+
 	// Best-effort usage extraction from Codex event payloads.
 	applyUsage := func(usage map[string]any) {
 		if usage == nil {
@@ -531,7 +705,8 @@ func (o *Orchestrator) onWorkerUpdate(issueID string, upd agent.Update) {
 }
 
 func (o *Orchestrator) onWorkerExit(ctx context.Context, entry *RunningEntry, res agent.Result, err error) {
-	duration := time.Since(entry.StartedAt).Seconds()
+	endedAt := time.Now().UTC()
+	duration := endedAt.Sub(entry.StartedAt).Seconds()
 
 	o.mu.Lock()
 	cfg := o.cfg
@@ -546,7 +721,70 @@ func (o *Orchestrator) onWorkerExit(ctx context.Context, entry *RunningEntry, re
 		o.mu.Unlock()
 	}
 
+	status := string(PhaseFailed)
+	var errMsg *string
+	if err == nil {
+		status = string(PhaseSucceeded)
+	} else {
+		s := err.Error()
+		errMsg = &s
+		// Preserve reconciliation cancels / stalls for UI/history.
+		if suppressRetry && entry.Phase == PhaseCanceledByReconciliation {
+			status = string(PhaseCanceledByReconciliation)
+		} else if entry.Phase == PhaseStalled {
+			status = string(PhaseStalled)
+		} else {
+			var ce *codex.Error
+			if errors.As(err, &ce) && ce != nil && ce.Category == codex.ErrTurnTimeout.Error() {
+				status = string(PhaseTimedOut)
+			} else if errors.Is(err, context.DeadlineExceeded) {
+				status = string(PhaseTimedOut)
+			}
+		}
+	}
+
+	var threadID *string
+	if v := strings.TrimSpace(entry.Live.ThreadID); v != "" {
+		threadID = &v
+	}
+	var turnID *string
+	if v := strings.TrimSpace(entry.Live.TurnID); v != "" {
+		turnID = &v
+	}
+
+	completed := CompletedEntry{
+		Issue:             res.FinalIssue,
+		IssueID:           entry.IssueID,
+		IssueIdentifier:   entry.Identifier,
+		Attempt:           entry.Attempt,
+		WorkspacePath:     strings.TrimSpace(entry.WorkspacePath),
+		StartedAt:         entry.StartedAt,
+		EndedAt:           endedAt,
+		DurationSecs:      duration,
+		Status:            status,
+		Error:             errMsg,
+		CodexInputTokens:  res.CodexInputTokens,
+		CodexOutputTokens: res.CodexOutputTokens,
+		CodexTotalTokens:  res.CodexTotalTokens,
+		TurnsRun:          res.TurnsRun,
+		ThreadID:          threadID,
+		TurnID:            turnID,
+		LastCodexEvent:    entry.Live.LastCodexEvent,
+		LastCodexMessage:  entry.Live.LastCodexMessage,
+	}
+
 	if suppressRetry {
+		o.mu.Lock()
+		o.completedHistory = append(o.completedHistory, completed)
+		if len(o.completedHistory) > 200 {
+			o.completedHistory = o.completedHistory[len(o.completedHistory)-200:]
+		}
+		totals := o.codexTotals
+		rateLimits := o.codexRateLimits
+		o.mu.Unlock()
+		o.appendAttemptBestEffort(completed)
+		o.persistStateBestEffort(totals, rateLimits)
+
 		if cleanupOnExit {
 			ws.RemoveBestEffort(ctx, entry.Identifier)
 		}
@@ -557,6 +795,10 @@ func (o *Orchestrator) onWorkerExit(ctx context.Context, entry *RunningEntry, re
 	if err == nil {
 		o.mu.Lock()
 		o.completed[entry.IssueID] = struct{}{}
+		o.completedHistory = append(o.completedHistory, completed)
+		if len(o.completedHistory) > 200 {
+			o.completedHistory = o.completedHistory[len(o.completedHistory)-200:]
+		}
 		o.codexTotals.SecondsRunning += duration
 		o.codexTotals.InputTokens += res.CodexInputTokens
 		o.codexTotals.OutputTokens += res.CodexOutputTokens
@@ -564,7 +806,12 @@ func (o *Orchestrator) onWorkerExit(ctx context.Context, entry *RunningEntry, re
 		if res.CodexRateLimits != nil {
 			o.codexRateLimits = res.CodexRateLimits
 		}
+		totals := o.codexTotals
+		rateLimits := o.codexRateLimits
 		o.mu.Unlock()
+
+		o.appendAttemptBestEffort(completed)
+		o.persistStateBestEffort(totals, rateLimits)
 
 		// If terminal at exit, clean + release instead of continuation retry.
 		if isTerminal(res.FinalIssue.State, cfg.Tracker.TerminalStates) {
@@ -578,6 +825,10 @@ func (o *Orchestrator) onWorkerExit(ctx context.Context, entry *RunningEntry, re
 	}
 
 	o.mu.Lock()
+	o.completedHistory = append(o.completedHistory, completed)
+	if len(o.completedHistory) > 200 {
+		o.completedHistory = o.completedHistory[len(o.completedHistory)-200:]
+	}
 	o.codexTotals.SecondsRunning += duration
 	o.codexTotals.InputTokens += res.CodexInputTokens
 	o.codexTotals.OutputTokens += res.CodexOutputTokens
@@ -585,11 +836,15 @@ func (o *Orchestrator) onWorkerExit(ctx context.Context, entry *RunningEntry, re
 	if res.CodexRateLimits != nil {
 		o.codexRateLimits = res.CodexRateLimits
 	}
+	totals := o.codexTotals
+	rateLimits := o.codexRateLimits
 	o.mu.Unlock()
 
+	o.appendAttemptBestEffort(completed)
+	o.persistStateBestEffort(totals, rateLimits)
+
 	next := nextAttempt(entry.Attempt)
-	errMsg := err.Error()
-	o.scheduleRetry(ctx, entry.IssueID, entry.Identifier, next, "backoff", &errMsg, backoffDelay(next, cfg.Agent.MaxRetryBackoff))
+	o.scheduleRetry(ctx, entry.IssueID, entry.Identifier, next, "backoff", errMsg, backoffDelay(next, cfg.Agent.MaxRetryBackoff))
 }
 
 func (o *Orchestrator) stopRunning(issueID string, phase RunPhase, cleanupWorkspace bool) {
@@ -744,9 +999,11 @@ func (o *Orchestrator) snapshot() map[string]any {
 	for _, r := range o.retries {
 		retrying = append(retrying, r)
 	}
+	completed := append([]CompletedEntry(nil), o.completedHistory...)
 	return map[string]any{
 		"running":      running,
 		"retrying":     retrying,
+		"completed":    completed,
 		"codex_totals": o.codexTotals,
 		"rate_limits":  o.codexRateLimits,
 	}
