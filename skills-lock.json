@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "anclax-develop-feature": {
+      "source": "cloudcarver/anclax",
+      "sourceType": "github",
+      "computedHash": "7b3f621c6ea0915a2345f650b0d3459dae34f851b4b30c5da417ae8e0cf2fef1"
+    }
+  }
+}

@@ -1,0 +1,336 @@
+openapi: 3.0.0
+
+info:
+  title: My Anclax Project
+  version: "1.0"
+  description: API for interacting with my anclax project
+
+servers:
+  - url: /api/v1
+    description: Base API path
+
+paths:
+  /health:
+    get:
+      summary: Health Check
+      description: Liveness/readiness endpoint for the API server.
+      operationId: getHealth
+      responses:
+        "200":
+          description: Health status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+      security: []
+
+  /symphony/snapshot:
+    get:
+      summary: Symphony Snapshot
+      description: Get a snapshot of Symphony orchestrator state for the web UI.
+      operationId: getSymphonySnapshot
+      responses:
+        "200":
+          description: Current Symphony snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SymphonySnapshot"
+      security: []
+
+  /symphony/start:
+    post:
+      summary: Start Symphony
+      description: Start the Symphony orchestrator (idempotent).
+      operationId: startSymphony
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartSymphonyRequest"
+      responses:
+        "200":
+          description: Start result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StartSymphonyResult"
+      security: []
+
+  /symphony/stop:
+    post:
+      summary: Stop Symphony
+      description: Stop the Symphony orchestrator (idempotent).
+      operationId: stopSymphony
+      responses:
+        "200":
+          description: Stop result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StopSymphonyResult"
+      security: []
+
+  /counter:
+    get:
+      summary: Get Counter
+      description: Retrieve the current counter value
+      operationId: getCounter
+      responses:
+        "200":
+          description: The current counter value
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Counter"
+      security: []
+    post:
+      summary: Increment Counter
+      description: Increment the counter by a specified amount
+      operationId: incrementCounter
+      responses:
+        "202":
+          description: The increment was accepted
+      security: 
+        - BearerAuth: 
+            - x.OperationPermit(c, operationID)
+
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status, symphony_running]
+      properties:
+        status:
+          type: string
+        symphony_running:
+          type: boolean
+        symphony_workflow_path:
+          type: string
+          nullable: true
+        symphony_last_error:
+          type: string
+          nullable: true
+
+    StartSymphonyRequest:
+      type: object
+      properties:
+        workflow_path:
+          type: string
+          description: Optional path to WORKFLOW.md. If omitted, server default is used.
+        http_port:
+          type: integer
+          format: int32
+          nullable: true
+          description: Optional Symphony debug HTTP port override. Set to -1 to disable even if WORKFLOW.md sets server.port.
+
+    StartSymphonyResult:
+      type: object
+      required: [running]
+      properties:
+        running:
+          type: boolean
+        workflow_path:
+          type: string
+          nullable: true
+
+    StopSymphonyResult:
+      type: object
+      required: [running]
+      properties:
+        running:
+          type: boolean
+
+    SymphonySnapshot:
+      type: object
+      required: [running, retrying, codex_totals]
+      properties:
+        running:
+          type: array
+          items:
+            $ref: "#/components/schemas/SymphonyRunningEntry"
+        retrying:
+          type: array
+          items:
+            $ref: "#/components/schemas/SymphonyRetryEntry"
+        codex_totals:
+          $ref: "#/components/schemas/CodexTotals"
+        rate_limits:
+          type: object
+          additionalProperties: true
+
+    SymphonyRunningEntry:
+      type: object
+      required: [issue, issue_id, issue_identifier, workspace_path, started_at, phase, live]
+      properties:
+        issue:
+          $ref: "#/components/schemas/SymphonyIssue"
+        issue_id:
+          type: string
+        issue_identifier:
+          type: string
+        attempt:
+          type: integer
+          format: int32
+          nullable: true
+        workspace_path:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        phase:
+          type: string
+        live:
+          $ref: "#/components/schemas/SymphonyLiveSession"
+
+    SymphonyLiveSession:
+      type: object
+      required: [codex_input_tokens, codex_output_tokens, codex_total_tokens, turn_count]
+      properties:
+        session_id:
+          type: string
+          nullable: true
+        thread_id:
+          type: string
+          nullable: true
+        turn_id:
+          type: string
+          nullable: true
+        codex_app_server_pid:
+          type: integer
+          format: int32
+          nullable: true
+        last_codex_event:
+          type: string
+          nullable: true
+        last_codex_timestamp:
+          type: string
+          format: date-time
+          nullable: true
+        last_codex_message:
+          type: string
+          nullable: true
+        codex_input_tokens:
+          type: integer
+          format: int32
+        codex_output_tokens:
+          type: integer
+          format: int32
+        codex_total_tokens:
+          type: integer
+          format: int32
+        turn_count:
+          type: integer
+          format: int32
+
+    SymphonyRetryEntry:
+      type: object
+      required: [issue_id, identifier, attempt, due_at]
+      properties:
+        issue_id:
+          type: string
+        identifier:
+          type: string
+        attempt:
+          type: integer
+          format: int32
+        due_at:
+          type: string
+          format: date-time
+        error:
+          type: string
+          nullable: true
+        delay_type:
+          type: string
+          nullable: true
+
+    SymphonyIssue:
+      type: object
+      required: [id, identifier, title, state]
+      properties:
+        id:
+          type: string
+        identifier:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        priority:
+          type: integer
+          format: int32
+          nullable: true
+        state:
+          type: string
+        branch_name:
+          type: string
+          nullable: true
+        url:
+          type: string
+          nullable: true
+        labels:
+          type: array
+          items:
+            type: string
+        blocked_by:
+          type: array
+          items:
+            $ref: "#/components/schemas/SymphonyBlockerRef"
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    SymphonyBlockerRef:
+      type: object
+      properties:
+        id:
+          type: string
+          nullable: true
+        identifier:
+          type: string
+          nullable: true
+        state:
+          type: string
+          nullable: true
+
+    CodexTotals:
+      type: object
+      required: [input_tokens, output_tokens, total_tokens, seconds_running]
+      properties:
+        input_tokens:
+          type: integer
+          format: int32
+        output_tokens:
+          type: integer
+          format: int32
+        total_tokens:
+          type: integer
+          format: int32
+        seconds_running:
+          type: number
+          format: double
+
+    Counter:
+      type: object
+      required: [count]
+      properties:
+        count:
+          type: integer
+          format: int32
+
+x-check-rules:
+  OperationPermit:
+    description: Check if the user has permission to perform the operation
+    useContext: true
+    parameters:
+      - name: operationID
+        description: The operation ID
+        schema:
+          type: string

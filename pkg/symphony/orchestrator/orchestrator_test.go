@@ -1,0 +1,190 @@
+package orchestrator
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/wibus-wee/synclax/pkg/symphony/agent"
+	"github.com/wibus-wee/synclax/pkg/symphony/codex"
+	"github.com/wibus-wee/synclax/pkg/symphony/domain"
+	"github.com/wibus-wee/synclax/pkg/symphony/runtime"
+	"github.com/wibus-wee/synclax/pkg/symphony/tracker"
+	"github.com/wibus-wee/synclax/pkg/symphony/workspace"
+)
+
+type fakeTracker struct {
+	candidates []domain.Issue
+	statesByID map[string]string
+}
+
+func (f *fakeTracker) FetchCandidateIssues(_ context.Context) ([]domain.Issue, error) {
+	return append([]domain.Issue(nil), f.candidates...), nil
+}
+
+func (f *fakeTracker) FetchIssuesByStates(_ context.Context, _ []string) ([]domain.Issue, error) {
+	return []domain.Issue{}, nil
+}
+
+func (f *fakeTracker) FetchIssueStatesByIDs(_ context.Context, ids []string) ([]domain.Issue, error) {
+	out := make([]domain.Issue, 0, len(ids))
+	for _, id := range ids {
+		if st, ok := f.statesByID[id]; ok {
+			out = append(out, domain.Issue{ID: id, Identifier: "X", State: st})
+		}
+	}
+	return out, nil
+}
+
+type fakeRunner struct {
+	called chan struct{}
+	res    agent.Result
+	err    error
+}
+
+func (r *fakeRunner) RunAttempt(_ context.Context, _ domain.Issue, _ *int, _ func(agent.Update)) (agent.Result, error) {
+	select {
+	case <-r.called:
+	default:
+		close(r.called)
+	}
+	return r.res, r.err
+}
+
+func mustOrchestrator(t *testing.T, workflow string) (*Orchestrator, context.CancelFunc) {
+	t.Helper()
+	dir := t.TempDir()
+	workflowPath := filepath.Join(dir, "WORKFLOW.md")
+	if err := os.WriteFile(workflowPath, []byte(workflow), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	o, err := New(Options{WorkflowPath: workflowPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := o.runtime.Start(ctx); err != nil {
+		cancel()
+		t.Fatalf("runtime.Start error: %v", err)
+	}
+	rt, _ := o.runtime.Get()
+	o.cfg = rt.Config
+	o.codex = codex.NewAppServer(codex.AppServerOptions{Command: "true"})
+
+	ws, err := workspace.NewManager(t.TempDir(), workspace.HookScripts{})
+	if err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	o.workspace = ws
+
+	return o, cancel
+}
+
+func TestTick_DispatchesAndQueuesContinuationRetry(t *testing.T) {
+	workflow := `---
+tracker:
+  kind: linear
+  api_key: x
+  project_slug: proj
+polling:
+  interval_ms: 50
+agent:
+  max_concurrent_agents: 10
+codex:
+  command: "true"
+---`
+	o, cancel := mustOrchestrator(t, workflow)
+	t.Cleanup(cancel)
+
+	issue := domain.Issue{ID: "i1", Identifier: "ABC-1", Title: "Test", State: "Todo"}
+	o.tracker = &fakeTracker{
+		candidates: []domain.Issue{issue},
+		statesByID: map[string]string{"i1": "Todo"},
+	}
+
+	r := &fakeRunner{
+		called: make(chan struct{}),
+		res: agent.Result{
+			FinalIssue:    issue,
+			WorkspacePath: "",
+		},
+	}
+	o.newRunner = func(_ *runtime.EffectiveRuntime, _ tracker.Client, _ *workspace.Manager, _ *codex.AppServer) attemptRunner {
+		return r
+	}
+
+	o.tick(context.Background())
+
+	select {
+	case <-r.called:
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected worker to be called")
+	}
+
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if _, ok := o.claimed["i1"]; !ok {
+		t.Fatal("expected issue to be claimed")
+	}
+	retry := o.retries["i1"]
+	if retry == nil {
+		t.Fatal("expected retry entry")
+	}
+	if retry.Attempt != 1 || retry.DelayType != "continuation" {
+		t.Fatalf("unexpected retry entry: %#v", retry)
+	}
+}
+
+func TestTick_TodoWithNonTerminalBlockerIsNotDispatched(t *testing.T) {
+	workflow := `---
+tracker:
+  kind: linear
+  api_key: x
+  project_slug: proj
+agent:
+  max_concurrent_agents: 10
+codex:
+  command: "true"
+---`
+	o, cancel := mustOrchestrator(t, workflow)
+	t.Cleanup(cancel)
+
+	o.tracker = &fakeTracker{
+		candidates: []domain.Issue{{
+			ID:         "i1",
+			Identifier: "ABC-1",
+			Title:      "Test",
+			State:      "Todo",
+			BlockedBy: []domain.BlockerRef{
+				{State: strPtr("In Progress")},
+			},
+		}},
+		statesByID: map[string]string{},
+	}
+
+	r := &fakeRunner{called: make(chan struct{})}
+	o.newRunner = func(_ *runtime.EffectiveRuntime, _ tracker.Client, _ *workspace.Manager, _ *codex.AppServer) attemptRunner {
+		return r
+	}
+
+	o.tick(context.Background())
+
+	select {
+	case <-r.called:
+		t.Fatal("did not expect worker to be called")
+	case <-time.After(200 * time.Millisecond):
+		// ok
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if len(o.claimed) != 0 {
+		t.Fatalf("expected no claims, got %#v", o.claimed)
+	}
+}
+
+func strPtr(s string) *string { return &s }
