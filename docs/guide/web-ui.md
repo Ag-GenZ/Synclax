@@ -76,11 +76,17 @@ App 启动时调用 `GET /health`：
 
 - `running[]`：当前运行中的 issue 与 `phase`（进度条/状态标签）
 - `retrying[]`：重试队列（显示 due_at、attempt、error）
+- `completed[]`：最近结束的 attempt 历史（用于 UI 的“最近执行/日志”）
 - `codex_totals`：累计用量（产品/运营会关心）
 - `rate_limits`：最近一次观测到的限流信息（best-effort）
 
 ::: tip
 UI 里不要把 `phase` 当作“稳定产品状态”。更推荐你把它映射成更稳定的状态机：`idle / running / retrying / blocked / error`，然后把 `phase` 作为 debug 文本展示。
+:::
+
+::: warning
+`completed[]` 是 **best-effort** 的“最近历史”，主要用于 UX；它不是强一致的审计日志。
+如果服务重启，Synclax 会从 `<workspace.root>/.symphony_state/attempts.jsonl` 尝试恢复最近记录。
 :::
 
 ## 安全提示（上线前必读）

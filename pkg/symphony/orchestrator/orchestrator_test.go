@@ -126,12 +126,25 @@ codex:
 		t.Fatal("expected worker to be called")
 	}
 
+	// Dispatch + retry scheduling happen in a goroutine; allow a short window for the retry entry
+	// to be recorded in orchestrator state.
+	var retry *RetryEntry
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		o.mu.Lock()
+		retry = o.retries["i1"]
+		o.mu.Unlock()
+		if retry != nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	if _, ok := o.claimed["i1"]; !ok {
 		t.Fatal("expected issue to be claimed")
 	}
-	retry := o.retries["i1"]
 	if retry == nil {
 		t.Fatal("expected retry entry")
 	}

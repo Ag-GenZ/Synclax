@@ -41,6 +41,7 @@ This returns a JSON object with:
 
 - `running`: array of running entries
 - `retrying`: array of retry entries
+- `completed`: recent attempt history entries (best-effort)
 - `codex_totals`: aggregated token/seconds counters
 - `rate_limits`: last observed rate limit payload (best-effort)
 
@@ -91,4 +92,3 @@ Enqueues a task to increment the counter.
 ```bash
 curl -sS -X POST http://localhost:2910/api/v1/counter
 ```
-

@@ -83,6 +83,23 @@ Snapshot 是 Symphony 运行时状态的“可序列化结构”，核心用于 
 
 - `GET http://127.0.0.1:<port>/snapshot`
 
+#### Snapshot 字段补充：`completed[]` 与持久化
+
+为了让 UI 能展示“刚刚发生了什么”（以及在服务重启后仍能看到最近历史），Synclax 额外提供了：
+
+- `completed[]`：最近的 attempt 结束记录（成功/失败/取消/超时等），用于 UI 的“历史/日志”视图
+
+同时，Synclax 会把一部分运行数据**落盘**（best-effort，不保证 100% 写入）：
+
+- 持久化目录：`<workspace.root>/.symphony_state/`
+  - `totals.json`：`codex_totals` 与 `rate_limits` 的最近一次快照（用于重启后恢复累计值）
+  - `attempts.jsonl`：最近 attempt 历史（JSON Lines，每行一个 `completed` entry）
+
+这套持久化的目标不是“强一致的审计账本”，而是：
+
+- 重启后 UI 不至于完全丢失“刚刚跑过什么”
+- 让累计 token/时间等指标不会因为重启而清零（或至少能尽量恢复）
+
 ## 3. 你需要准备什么（最小可用）
 
 ### 3.1 Tracker：Linear

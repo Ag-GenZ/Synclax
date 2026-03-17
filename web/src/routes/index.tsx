@@ -34,7 +34,12 @@ import {
   stopSymphonyMutation,
 } from "#/api-gen/@tanstack/react-query.gen";
 import { toastManager } from "#/components/ui/toast";
-import type { SymphonyRunningEntry, SymphonyRetryEntry, CodexTotals } from "#/api-gen/types.gen";
+import type {
+  SymphonyRunningEntry,
+  SymphonyRetryEntry,
+  SymphonyCompletedEntry,
+  CodexTotals,
+} from "#/api-gen/types.gen";
 
 import {
   SidebarProvider,
@@ -152,6 +157,28 @@ function fmtDueIn(iso: string): string {
   if (s < 60) return `in ${s}s`;
   if (s < 3600) return `in ${Math.floor(s / 60)}m`;
   return `in ${Math.floor(s / 3600)}h`;
+}
+
+function statusVariant(status: string):
+  | "success"
+  | "error"
+  | "warning"
+  | "outline"
+  | "secondary"
+  | "info" {
+  switch (status) {
+    case "Succeeded":
+      return "success";
+    case "Failed":
+      return "error";
+    case "TimedOut":
+    case "Stalled":
+      return "warning";
+    case "CanceledByReconciliation":
+      return "outline";
+    default:
+      return "secondary";
+  }
 }
 
 // ─── Phase progress bar ───────────────────────────────────────────────────────
@@ -377,6 +404,89 @@ function RetryRow({ entry }: { entry: SymphonyRetryEntry }) {
               </span>
             </TooltipTrigger>
             <TooltipPopup className="max-w-sm break-words">{entry.error}</TooltipPopup>
+          </Tooltip>
+        ) : (
+          <span className="text-muted-foreground text-sm">—</span>
+        )}
+      </TableCell>
+    </TableRow>
+  );
+}
+
+// ─── Completed row ────────────────────────────────────────────────────────────
+function CompletedRow({ entry }: { entry: SymphonyCompletedEntry }) {
+  const { issue } = entry;
+  const v = statusVariant(entry.status);
+  const title = issue.title?.trim() ? issue.title : "Untitled";
+  return (
+    <TableRow>
+      <TableCell>
+        <div className="flex items-start gap-2">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-xs font-semibold text-[var(--lagoon-deep)]">
+                {issue.identifier}
+              </span>
+              <Badge variant={v} size="sm">
+                {entry.status}
+              </Badge>
+              {entry.attempt != null && (
+                <Badge variant="outline" size="sm">
+                  #{entry.attempt}
+                </Badge>
+              )}
+            </div>
+            <div className="mt-1 text-sm font-medium leading-snug line-clamp-1">{title}</div>
+          </div>
+          {issue.url && (
+            <Tooltip>
+              <TooltipTrigger>
+                <a
+                  href={issue.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-0.5 text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <ExternalLinkIcon className="size-3.5" />
+                </a>
+              </TooltipTrigger>
+              <TooltipPopup>Open in Linear</TooltipPopup>
+            </Tooltip>
+          )}
+        </div>
+      </TableCell>
+      <TableCell>
+        <Tooltip>
+          <TooltipTrigger>
+            <span className="text-sm font-medium tabular-nums text-muted-foreground">
+              {fmtAgo(entry.ended_at)}
+            </span>
+          </TooltipTrigger>
+          <TooltipPopup>{new Date(entry.ended_at).toLocaleString()}</TooltipPopup>
+        </Tooltip>
+      </TableCell>
+      <TableCell className="tabular-nums text-sm text-muted-foreground">
+        {fmtSeconds(entry.duration_secs)}
+      </TableCell>
+      <TableCell>
+        <Tooltip>
+          <TooltipTrigger>
+            <span className="text-sm font-semibold tabular-nums">{fmtTokens(entry.codex_total_tokens)}</span>
+          </TooltipTrigger>
+          <TooltipPopup className="font-mono text-xs">
+            in={entry.codex_input_tokens} out={entry.codex_output_tokens} total={entry.codex_total_tokens} turns={entry.turns_run}
+          </TooltipPopup>
+        </Tooltip>
+      </TableCell>
+      <TableCell className="max-w-xs">
+        {entry.error ? (
+          <Tooltip>
+            <TooltipTrigger>
+              <span className="block max-w-[260px] truncate font-mono text-xs text-destructive-foreground">
+                {entry.error}
+              </span>
+            </TooltipTrigger>
+            <TooltipPopup className="max-w-md break-words">{entry.error}</TooltipPopup>
           </Tooltip>
         ) : (
           <span className="text-muted-foreground text-sm">—</span>
@@ -647,6 +757,7 @@ function SymphonyDashboard() {
   const isRunning = health?.symphony_running ?? false;
   const runningCount = snapshot?.running.length ?? 0;
   const retryingCount = snapshot?.retrying.length ?? 0;
+  const completedCount = snapshot?.completed?.length ?? 0;
   const totalTokens = snapshot?.codex_totals.total_tokens ?? 0;
   const secondsRunning = snapshot?.codex_totals.seconds_running ?? 0;
   const rateLimits = snapshot?.rate_limits;
@@ -749,6 +860,10 @@ function SymphonyDashboard() {
                     >
                       {retryingCount}
                     </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">Recent completed</span>
+                    <span className="text-xs font-semibold tabular-nums">{completedCount}</span>
                   </div>
                 </div>
               </SidebarGroupContent>
@@ -885,6 +1000,15 @@ function SymphonyDashboard() {
                       </Badge>
                     )}
                   </TabsTab>
+                  <TabsTab value="completed" className="gap-1.5">
+                    <CheckCircle2Icon className="size-3.5" />
+                    Completed
+                    {completedCount > 0 && (
+                      <Badge variant="secondary" size="sm" className="ml-1 tabular-nums">
+                        {completedCount}
+                      </Badge>
+                    )}
+                  </TabsTab>
                   <TabsTab value="tokens" className="gap-1.5">
                     <ZapIcon className="size-3.5" />
                     Tokens
@@ -954,6 +1078,47 @@ function SymphonyDashboard() {
                         <TableBody>
                           {snapshot.retrying.map((e) => (
                             <RetryRow key={`${e.issue_id}-${e.attempt}`} entry={e} />
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </Card>
+                  )}
+                </TabsPanel>
+
+                {/* Completed */}
+                <TabsPanel value="completed" className="mt-4">
+                  {snapLoading ? (
+                    <Skeleton className="h-40 rounded-xl" />
+                  ) : !snapshot?.completed?.length ? (
+                    <div className="rounded-xl border border-dashed p-10 text-center">
+                      <div className="mx-auto mb-3 flex size-10 items-center justify-center rounded-full bg-muted">
+                        <CheckCircle2Icon className="size-5 text-muted-foreground" />
+                      </div>
+                      <p className="text-sm font-medium mb-1">No completed attempts yet</p>
+                      <p className="text-xs text-muted-foreground max-w-sm mx-auto leading-relaxed">
+                        Completed attempts appear here after an agent run finishes. This is a
+                        best-effort recent history (persisted under{" "}
+                        <span className="font-mono">.symphony_state/attempts.jsonl</span>).
+                      </p>
+                    </div>
+                  ) : (
+                    <Card>
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Issue</TableHead>
+                            <TableHead>Ended</TableHead>
+                            <TableHead>Duration</TableHead>
+                            <TableHead>Tokens</TableHead>
+                            <TableHead>Error</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {snapshot.completed.map((e) => (
+                            <CompletedRow
+                              key={`${e.issue_id}-${e.ended_at}-${e.attempt ?? 0}`}
+                              entry={e}
+                            />
                           ))}
                         </TableBody>
                       </Table>

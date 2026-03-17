@@ -752,8 +752,23 @@ func (o *Orchestrator) onWorkerExit(ctx context.Context, entry *RunningEntry, re
 		turnID = &v
 	}
 
+	finalIssue := res.FinalIssue
+	if strings.TrimSpace(finalIssue.ID) == "" ||
+		strings.TrimSpace(finalIssue.Identifier) == "" ||
+		strings.TrimSpace(finalIssue.Title) == "" ||
+		strings.TrimSpace(finalIssue.State) == "" {
+		finalIssue = entry.Issue
+	}
+
+	terminalAtExit := isTerminal(finalIssue.State, cfg.Tracker.TerminalStates)
+	if err == nil && !suppressRetry && !terminalAtExit {
+		// Queue continuation retry as early as possible to reduce races with callers that
+		// observe retries immediately after dispatch.
+		o.scheduleRetry(ctx, entry.IssueID, entry.Identifier, 1, "continuation", nil, 1*time.Second)
+	}
+
 	completed := CompletedEntry{
-		Issue:             res.FinalIssue,
+		Issue:             finalIssue,
 		IssueID:           entry.IssueID,
 		IssueIdentifier:   entry.Identifier,
 		Attempt:           entry.Attempt,
@@ -773,6 +788,13 @@ func (o *Orchestrator) onWorkerExit(ctx context.Context, entry *RunningEntry, re
 		LastCodexMessage:  entry.Live.LastCodexMessage,
 	}
 
+	persistBestEffort := func(totals CodexTotals, rateLimits map[string]any, c CompletedEntry) {
+		go func() {
+			o.appendAttemptBestEffort(c)
+			o.persistStateBestEffort(totals, rateLimits)
+		}()
+	}
+
 	if suppressRetry {
 		o.mu.Lock()
 		o.completedHistory = append(o.completedHistory, completed)
@@ -782,8 +804,7 @@ func (o *Orchestrator) onWorkerExit(ctx context.Context, entry *RunningEntry, re
 		totals := o.codexTotals
 		rateLimits := o.codexRateLimits
 		o.mu.Unlock()
-		o.appendAttemptBestEffort(completed)
-		o.persistStateBestEffort(totals, rateLimits)
+		persistBestEffort(totals, rateLimits, completed)
 
 		if cleanupOnExit {
 			ws.RemoveBestEffort(ctx, entry.Identifier)
@@ -810,17 +831,15 @@ func (o *Orchestrator) onWorkerExit(ctx context.Context, entry *RunningEntry, re
 		rateLimits := o.codexRateLimits
 		o.mu.Unlock()
 
-		o.appendAttemptBestEffort(completed)
-		o.persistStateBestEffort(totals, rateLimits)
+		persistBestEffort(totals, rateLimits, completed)
 
 		// If terminal at exit, clean + release instead of continuation retry.
-		if isTerminal(res.FinalIssue.State, cfg.Tracker.TerminalStates) {
+		if terminalAtExit {
 			ws.RemoveBestEffort(ctx, res.FinalIssue.Identifier)
 			o.releaseClaim(entry.IssueID)
 			return
 		}
 
-		o.scheduleRetry(ctx, entry.IssueID, entry.Identifier, 1, "continuation", nil, 1*time.Second)
 		return
 	}
 
@@ -840,8 +859,7 @@ func (o *Orchestrator) onWorkerExit(ctx context.Context, entry *RunningEntry, re
 	rateLimits := o.codexRateLimits
 	o.mu.Unlock()
 
-	o.appendAttemptBestEffort(completed)
-	o.persistStateBestEffort(totals, rateLimits)
+	persistBestEffort(totals, rateLimits, completed)
 
 	next := nextAttempt(entry.Attempt)
 	o.scheduleRetry(ctx, entry.IssueID, entry.Identifier, next, "backoff", errMsg, backoffDelay(next, cfg.Agent.MaxRetryBackoff))
