@@ -6,6 +6,14 @@ outline: deep
 
 这一页面向“使用者/运维/前端联调”，目标只有一个：**在本地把 Synclax 跑起来，并且保证 API Server 永远有一个稳定可用的健康检查；同时你能启动/停止 Symphony，并通过 Snapshot 为 Web UI 提供实时状态。**
 
+## 成功标准（你应该看到什么）
+
+做到下面 3 点，就说明“第一层”已经闭环：
+
+1. `GET /api/v1/health` 稳定返回 200（服务在线）
+2. `POST /api/v1/symphony/start` 能启动 orchestrator（并且重复调用是安全的）
+3. `GET /api/v1/symphony/snapshot` 能持续返回 JSON（给 UI 轮询用）
+
 ## 你会得到什么
 
 Synclax = Anclax 应用 + Symphony 模块。
@@ -222,3 +230,8 @@ curl -sS -X POST http://localhost:2910/api/v1/counter
 - Web UI → 用 `GET /api/v1/symphony/snapshot`
 - 本机 debug → 可用 Symphony debug server 的 `/snapshot`（如果你开启了它）
 
+## 下一步（按你要做的事）
+
+- 需要配置详解（WORKFLOW / 环境变量）→ [Configuration](./configuration)
+- 需要做 Web UI（OpenAPI client + 状态流）→ [Web UI](./web-ui)
+- 需要理解 orchestrator 行为与 phase → [Symphony](./symphony)
