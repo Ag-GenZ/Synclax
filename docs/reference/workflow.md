@@ -41,6 +41,19 @@ Notes:
 - Only `kind: linear` is supported right now.
 - `api_key` may use `$ENV_VAR` expansion.
 
+### `provider`
+
+```yaml
+provider:
+  kind: codex
+```
+
+Notes:
+
+- Only `kind: codex` is supported right now.
+- Provider decides “how to run a turn” (e.g. Codex app-server). It is selected by `provider.kind` in
+  `pkg/symphony/provider/factory.go`.
+
 ## Dynamic tools (Codex app-server)
 
 During Codex `app-server` sessions, Symphony injects a small set of **dynamic tools** that the

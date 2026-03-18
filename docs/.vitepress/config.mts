@@ -12,6 +12,7 @@ export default withMermaid({
       { text: "Guide", link: "/guide/overview" },
       { text: "Philosophy", link: "/guide/philosophy" },
       { text: "Architecture", link: "/guide/architecture" },
+      { text: "Developer", link: "/developer/developer-guide" },
       { text: "Console", link: "/guide/web-ui" },
       { text: "Reference", link: "/reference/workflow" },
     ],
@@ -57,6 +58,7 @@ export default withMermaid({
         {
           text: "Developer（Advanced）",
           items: [
+            { text: "Developer Guide（Extending）", link: "/developer/developer-guide" },
             { text: "Architecture（Code Map）", link: "/developer/architecture" },
             { text: "Web UI Integration", link: "/developer/web-ui-integration" },
             { text: "Codegen", link: "/developer/codegen" },

@@ -16,6 +16,9 @@ hero:
     - theme: alt
       text: 系统架构（先理解）
       link: /guide/architecture
+    - theme: alt
+      text: Developer Guide（扩展）
+      link: /developer/developer-guide
 
 features:
   - title: 可控（能启停、能解释）
