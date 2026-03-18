@@ -321,6 +321,15 @@ func (o *Orchestrator) getPollInterval() time.Duration {
 	return o.cfg.Polling.Interval
 }
 
+func newTracker(cfg symphonycfg.TrackerConfig) (tracker.Client, error) {
+	switch cfg.Kind {
+	case "linear":
+		return linear.NewFromConfig(cfg)
+	default:
+		return nil, fmt.Errorf("unsupported tracker kind: %q", cfg.Kind)
+	}
+}
+
 func (o *Orchestrator) applyRuntimeLocked(portOverride *int) error {
 	rt, rev := o.runtime.Get()
 	if rt == nil {
@@ -350,14 +359,7 @@ func (o *Orchestrator) applyRuntimeLocked(portOverride *int) error {
 	o.workspace = ws
 	o.ensureStateDirLocked()
 
-	tr, err := linear.New(linear.Options{
-		Endpoint:     o.cfg.Tracker.Endpoint,
-		APIKey:       o.cfg.Tracker.APIKey,
-		ProjectSlug:  o.cfg.Tracker.ProjectSlug,
-		ActiveStates: o.cfg.Tracker.ActiveStates,
-		PageSize:     o.cfg.Tracker.PageSize,
-		Timeout:      o.cfg.Tracker.Timeout,
-	})
+	tr, err := newTracker(o.cfg.Tracker)
 	if err != nil {
 		return err
 	}
@@ -370,8 +372,8 @@ func (o *Orchestrator) applyRuntimeLocked(portOverride *int) error {
 		SandboxPolicy:  o.cfg.Codex.TurnSandboxPolicy,
 		ReadTimeout:    o.cfg.Codex.ReadTimeout,
 		TurnTimeout:    o.cfg.Codex.TurnTimeout,
-		LinearEndpoint: o.cfg.Tracker.Endpoint,
-		LinearAPIKey:   o.cfg.Tracker.APIKey,
+		LinearEndpoint: linear.StringParam(o.cfg.Tracker.Params, "endpoint", ""),
+		LinearAPIKey:   linear.StringParam(o.cfg.Tracker.Params, "api_key", ""),
 		LinearTimeout:  o.cfg.Tracker.Timeout,
 	})
 
@@ -533,8 +535,8 @@ func (o *Orchestrator) tick(ctx context.Context) {
 func (o *Orchestrator) dispatchPreflightOK() bool {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	if strings.TrimSpace(o.cfg.Tracker.APIKey) == "" || strings.TrimSpace(o.cfg.Tracker.ProjectSlug) == "" {
-		log.Printf("symphony dispatch_validation status=failed error=missing tracker config")
+	if o.tracker == nil {
+		log.Printf("symphony dispatch_validation status=failed error=no tracker configured")
 		return false
 	}
 	if strings.TrimSpace(o.cfg.Codex.Command) == "" {

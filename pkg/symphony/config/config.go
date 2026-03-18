@@ -22,13 +22,11 @@ type EffectiveConfig struct {
 
 type TrackerConfig struct {
 	Kind           string
-	Endpoint       string
-	APIKey         string
-	ProjectSlug    string
 	ActiveStates   []string
 	TerminalStates []string
 	PageSize       int
 	Timeout        time.Duration
+	Params         map[string]any // tracker-specific key-value pairs from YAML
 }
 
 type PollingConfig struct {
@@ -77,23 +75,21 @@ type LoggingConfig struct {
 }
 
 var (
-	ErrUnsupportedTrackerKind    = errors.New("unsupported_tracker_kind")
-	ErrMissingTrackerAPIKey      = errors.New("missing_tracker_api_key")
-	ErrMissingTrackerProjectSlug = errors.New("missing_tracker_project_slug")
-	ErrMissingCodexCommand       = errors.New("missing_codex_command")
+	ErrMissingCodexCommand = errors.New("missing_codex_command")
 )
 
 func FromWorkflowConfig(cfg map[string]any) (EffectiveConfig, error) {
+	// Collect the entire raw tracker map as Params.
+	trackerParams := rawMap(getNested(cfg, "tracker"))
+
 	effective := EffectiveConfig{
 		Tracker: TrackerConfig{
 			Kind:           str(getNested(cfg, "tracker", "kind")),
-			Endpoint:       str(getNested(cfg, "tracker", "endpoint")),
-			APIKey:         str(getNested(cfg, "tracker", "api_key")),
-			ProjectSlug:    str(getNested(cfg, "tracker", "project_slug")),
 			ActiveStates:   strSlice(getNested(cfg, "tracker", "active_states")),
 			TerminalStates: strSlice(getNested(cfg, "tracker", "terminal_states")),
 			PageSize:       intFromAny(getNested(cfg, "tracker", "page_size"), 50),
 			Timeout:        timeFromMsAny(getNested(cfg, "tracker", "timeout_ms"), 30000),
+			Params:         trackerParams,
 		},
 		Polling: PollingConfig{
 			Interval: timeFromMsAny(getNested(cfg, "polling", "interval_ms"), 30000),
@@ -149,9 +145,6 @@ func applyDefaults(cfg *EffectiveConfig) {
 	if cfg.Tracker.Kind == "" {
 		cfg.Tracker.Kind = "linear"
 	}
-	if cfg.Tracker.Kind == "linear" && cfg.Tracker.Endpoint == "" {
-		cfg.Tracker.Endpoint = "https://api.linear.app/graphql"
-	}
 	if len(cfg.Tracker.ActiveStates) == 0 {
 		cfg.Tracker.ActiveStates = []string{"Todo", "In Progress"}
 	}
@@ -197,11 +190,11 @@ func applyDefaults(cfg *EffectiveConfig) {
 }
 
 func resolveEnvironment(cfg *EffectiveConfig) {
-	if cfg.Tracker.APIKey == "" {
-		// canonical env for Linear
-		cfg.Tracker.APIKey = os.Getenv("LINEAR_API_KEY")
-	} else {
-		cfg.Tracker.APIKey = resolveEnvToken(cfg.Tracker.APIKey)
+	// Resolve $VAR tokens in all string values within Params.
+	for k, v := range cfg.Tracker.Params {
+		if s, ok := v.(string); ok {
+			cfg.Tracker.Params[k] = resolveEnvToken(s)
+		}
 	}
 
 	cfg.Workspace.Root = expandPath(resolveEnvToken(cfg.Workspace.Root))
@@ -220,15 +213,6 @@ func normalize(cfg *EffectiveConfig) {
 }
 
 func validate(cfg EffectiveConfig) error {
-	if cfg.Tracker.Kind != "linear" {
-		return ErrUnsupportedTrackerKind
-	}
-	if strings.TrimSpace(cfg.Tracker.APIKey) == "" {
-		return ErrMissingTrackerAPIKey
-	}
-	if strings.TrimSpace(cfg.Tracker.ProjectSlug) == "" {
-		return ErrMissingTrackerProjectSlug
-	}
 	if strings.TrimSpace(cfg.Codex.Command) == "" {
 		return ErrMissingCodexCommand
 	}
@@ -319,6 +303,29 @@ func getNested(root map[string]any, path ...string) any {
 		return nil
 	}
 	return cur
+}
+
+func rawMap(v any) map[string]any {
+	if v == nil {
+		return map[string]any{}
+	}
+	if m, ok := v.(map[string]any); ok {
+		out := make(map[string]any, len(m))
+		for k, vv := range m {
+			out[k] = vv
+		}
+		return out
+	}
+	if m, ok := v.(map[any]any); ok {
+		out := make(map[string]any, len(m))
+		for k, vv := range m {
+			if ks, ok := k.(string); ok {
+				out[ks] = vv
+			}
+		}
+		return out
+	}
+	return map[string]any{}
 }
 
 func str(v any) string {

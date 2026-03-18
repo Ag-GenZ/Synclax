@@ -17,5 +17,5 @@ todos.json
 .vitepress/dist
 docs/.vitepress/cache
 docs/.vitepress/dist
-WORKFLOW_*.md
+WORKFLOW.*.md
 log

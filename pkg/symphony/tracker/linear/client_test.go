@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/wibus-wee/synclax/pkg/symphony/config"
 )
 
 func TestFetchIssuesByStates_EmptyIsNoOp(t *testing.T) {
@@ -182,5 +184,80 @@ func TestFetchIssueStatesByIDs_UsesIDTyping(t *testing.T) {
 	}
 	if len(issues) != 1 || issues[0].State != "Done" {
 		t.Fatalf("unexpected result: %#v", issues)
+	}
+}
+
+func TestNewFromConfig_Success(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":{}}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	c, err := NewFromConfig(config.TrackerConfig{
+		ActiveStates: []string{"Todo"},
+		PageSize:     10,
+		Timeout:      2 * time.Second,
+		Params: map[string]any{
+			"endpoint":     srv.URL,
+			"api_key":      "test-key",
+			"project_slug": "proj",
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewFromConfig error: %v", err)
+	}
+	if c == nil {
+		t.Fatal("expected non-nil client")
+	}
+}
+
+func TestNewFromConfig_MissingAPIKey(t *testing.T) {
+	t.Setenv("LINEAR_API_KEY", "")
+	_, err := NewFromConfig(config.TrackerConfig{
+		Params: map[string]any{
+			"project_slug": "proj",
+		},
+	})
+	if err == nil {
+		t.Fatal("expected error for missing api key")
+	}
+}
+
+func TestNewFromConfig_DefaultEndpoint(t *testing.T) {
+	c, err := NewFromConfig(config.TrackerConfig{
+		ActiveStates: []string{"Todo"},
+		PageSize:     10,
+		Timeout:      2 * time.Second,
+		Params: map[string]any{
+			"api_key":      "test-key",
+			"project_slug": "proj",
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewFromConfig error: %v", err)
+	}
+	if c.endpoint != "https://api.linear.app/graphql" {
+		t.Fatalf("expected default endpoint, got %q", c.endpoint)
+	}
+}
+
+func TestNewFromConfig_EnvFallback(t *testing.T) {
+	t.Setenv("LINEAR_API_KEY", "env-token")
+	c, err := NewFromConfig(config.TrackerConfig{
+		ActiveStates: []string{"Todo"},
+		PageSize:     10,
+		Timeout:      2 * time.Second,
+		Params: map[string]any{
+			"endpoint":     "https://example.com/graphql",
+			"project_slug": "proj",
+			// api_key intentionally omitted
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewFromConfig error: %v", err)
+	}
+	if c.apiKey != "env-token" {
+		t.Fatalf("expected env fallback api key, got %q", c.apiKey)
 	}
 }

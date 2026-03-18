@@ -6,6 +6,16 @@ import (
 	"github.com/wibus-wee/synclax/pkg/symphony/domain"
 )
 
+// Supported reports whether kind names a built-in tracker implementation.
+func Supported(kind string) bool {
+	switch kind {
+	case "linear":
+		return true
+	default:
+		return false
+	}
+}
+
 type Client interface {
 	FetchCandidateIssues(ctx context.Context) ([]domain.Issue, error)
 	FetchIssuesByStates(ctx context.Context, stateNames []string) ([]domain.Issue, error)
