@@ -1,6 +1,5 @@
 import { memo, useState, useRef, useEffect } from "react";
 import {
-  ActivityIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   ExternalLinkIcon,
@@ -14,6 +13,7 @@ import { Card, CardHeader, CardPanel } from "#/components/ui/card";
 import { Badge } from "#/components/ui/badge";
 import { Collapsible, CollapsibleTrigger, CollapsiblePanel } from "#/components/ui/collapsible";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "#/components/ui/tooltip";
+import { cn } from "#/lib/utils";
 import { fmtAgo, fmtTokens } from "./utils";
 import { PhaseBar } from "./PhaseBar";
 
@@ -65,12 +65,12 @@ export const AgentCard = memo(function AgentCard({ entry }: { entry: SymphonyRun
 
   return (
     <Card className="overflow-hidden">
-      <CardHeader className="pb-3">
-        {/* Title row */}
+      <CardHeader className="px-4 pt-4 pb-3 space-y-2.5">
+        {/* ID + badges row */}
         <div className="flex items-start gap-2">
           <div className="flex-1 min-w-0">
             <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
-              <span className="font-mono text-xs font-semibold text-[var(--lagoon-deep)]">
+              <span className="font-mono text-[11px] font-bold text-[var(--lagoon-deep)]">
                 {issue.identifier}
               </span>
               <Badge variant={stateVariant} size="sm">
@@ -88,7 +88,7 @@ export const AgentCard = memo(function AgentCard({ entry }: { entry: SymphonyRun
                 </Badge>
               ))}
             </div>
-            <p className="text-sm font-medium leading-snug line-clamp-2">{issue.title}</p>
+            <p className="text-[13px] font-semibold leading-snug line-clamp-2">{issue.title}</p>
           </div>
           {issue.url && (
             <Tooltip>
@@ -97,7 +97,7 @@ export const AgentCard = memo(function AgentCard({ entry }: { entry: SymphonyRun
                   href={issue.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="mt-0.5 text-muted-foreground hover:text-foreground transition-colors"
+                  className="mt-0.5 text-muted-foreground/40 hover:text-foreground transition-colors"
                 >
                   <ExternalLinkIcon className="size-3.5" />
                 </a>
@@ -106,100 +106,105 @@ export const AgentCard = memo(function AgentCard({ entry }: { entry: SymphonyRun
             </Tooltip>
           )}
         </div>
-        {/* Phase */}
-        <div className="mt-3">
-          <PhaseBar phase={phase} />
+
+        {/* Phase progress */}
+        <PhaseBar phase={phase} />
+
+        {/* Inline metrics */}
+        <div className="flex items-center gap-2.5 text-[11px] text-muted-foreground flex-wrap">
+          <span className="tabular-nums">
+            <span className="font-semibold text-foreground">{live.turn_count}</span>{" "}
+            <span className="text-muted-foreground/60">turns</span>
+          </span>
+          <span className="text-border/60">·</span>
+          <span className="tabular-nums text-info-foreground font-medium">
+            {fmtTokens(live.codex_input_tokens)} in
+          </span>
+          <span className="text-border/60">·</span>
+          <span className="tabular-nums text-success-foreground font-medium">
+            {fmtTokens(live.codex_output_tokens)} out
+          </span>
+          <span className="text-border/60">·</span>
+          <span className="flex items-center gap-1 text-muted-foreground/70">
+            <TimerIcon className="size-3" />
+            {fmtAgo(started_at)}
+          </span>
         </div>
       </CardHeader>
 
-      <CardPanel className="pt-0 space-y-3">
-        {/* Metrics */}
-        <div className="grid grid-cols-3 gap-2">
-          <div className="rounded-lg bg-muted/50 p-2.5 text-center">
-            <div className="text-[10px] text-muted-foreground mb-0.5">Turns</div>
-            <div className="text-sm font-semibold tabular-nums">{live.turn_count}</div>
-          </div>
-          <div className="rounded-lg bg-muted/50 p-2.5 text-center">
-            <div className="text-[10px] text-muted-foreground mb-0.5">In</div>
-            <div className="text-sm font-semibold tabular-nums text-info-foreground">
-              {fmtTokens(live.codex_input_tokens)}
-            </div>
-          </div>
-          <div className="rounded-lg bg-muted/50 p-2.5 text-center">
-            <div className="text-[10px] text-muted-foreground mb-0.5">Out</div>
-            <div className="text-sm font-semibold tabular-nums text-success-foreground">
-              {fmtTokens(live.codex_output_tokens)}
-            </div>
-          </div>
-        </div>
-
-        {/* Live event */}
+      <CardPanel className="pt-0 px-4 pb-4 space-y-3">
+        {/* Terminal stream */}
         {hasLiveEvent && (
-          <div className="rounded-md border bg-muted/30 px-3 py-2">
-            <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground mb-1.5">
-              <ActivityIcon className="size-3" />
-              <span className="font-mono">
+          <div className="rounded-lg border border-border/40 overflow-hidden">
+            {/* macOS-style title bar */}
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-muted/30 border-b border-border/30">
+              <div className="flex items-center gap-1">
+                <div className="size-2 rounded-full bg-destructive/40" />
+                <div className="size-2 rounded-full bg-warning/40" />
+                <div className="size-2 rounded-full bg-success/40" />
+              </div>
+              <span className="font-mono text-[10px] text-muted-foreground/50 ml-1 flex-1 truncate">
                 {simplifyEvent(blocks.at(-1)?.event ?? live.last_codex_event ?? "event")}
               </span>
               {live.last_codex_timestamp && (
-                <span className="ml-auto tabular-nums">{fmtAgo(live.last_codex_timestamp)}</span>
+                <span className="font-mono text-[10px] text-muted-foreground/40 tabular-nums shrink-0">
+                  {fmtAgo(live.last_codex_timestamp)}
+                </span>
               )}
             </div>
-            {blocks.length > 0 ? (
-              <div
-                ref={streamRef}
-                className="max-h-72 overflow-y-auto scroll-smooth space-y-1.5"
-              >
-                {blocks.map((block, i) => {
+            {/* Stream content */}
+            <div
+              ref={streamRef}
+              className="bg-black/[0.03] dark:bg-black/30 p-3 max-h-44 overflow-y-auto scroll-smooth space-y-1"
+            >
+              {blocks.length > 0 ? (
+                blocks.map((block, i) => {
                   const isLast = i === blocks.length - 1;
                   return (
                     <p
                       key={i}
-                      className={
-                        isLast
-                          ? "text-xs leading-relaxed"
-                          : "text-xs leading-relaxed text-muted-foreground"
-                      }
+                      className={cn(
+                        "font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all",
+                        isLast ? "text-foreground/90" : "text-muted-foreground/50",
+                      )}
                     >
                       {block.text}
                     </p>
                   );
-                })}
-              </div>
-            ) : live.last_codex_message ? (
-              <p className="text-xs leading-relaxed">{live.last_codex_message}</p>
-            ) : (
-              <p className="text-xs text-muted-foreground">—</p>
-            )}
+                })
+              ) : live.last_codex_message ? (
+                <p className="font-mono text-[11px] leading-relaxed text-foreground/90">
+                  {live.last_codex_message}
+                </p>
+              ) : (
+                <p className="font-mono text-[11px] text-muted-foreground/40">—</p>
+              )}
+            </div>
           </div>
         )}
 
         {/* Meta */}
-        <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-          <span className="flex items-center gap-1">
-            <TimerIcon className="size-3" />
-            {fmtAgo(started_at)}
-          </span>
+        <div className="space-y-1 text-[11px] text-muted-foreground/60">
           {issue.branch_name && (
-            <span className="flex items-center gap-1 min-w-0">
+            <div className="flex items-center gap-1.5">
               <GitBranchIcon className="size-3 shrink-0" />
               <span className="font-mono truncate">{issue.branch_name}</span>
-            </span>
+            </div>
           )}
-        </div>
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <FolderIcon className="size-3 shrink-0" />
-          <span className="font-mono truncate">{workspace_path}</span>
+          <div className="flex items-center gap-1.5">
+            <FolderIcon className="size-3 shrink-0" />
+            <span className="font-mono truncate">{workspace_path}</span>
+          </div>
         </div>
 
         {/* Expandable details */}
         {(issue.description || (issue.blocked_by && issue.blocked_by.length > 0)) && (
           <Collapsible open={open} onOpenChange={setOpen}>
-            <CollapsibleTrigger className="flex w-full items-center gap-1.5 py-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
+            <CollapsibleTrigger className="flex w-full items-center gap-1.5 py-0.5 text-[11px] text-muted-foreground/50 hover:text-muted-foreground transition-colors">
               {open ? (
-                <ChevronDownIcon className="size-3.5" />
+                <ChevronDownIcon className="size-3" />
               ) : (
-                <ChevronRightIcon className="size-3.5" />
+                <ChevronRightIcon className="size-3" />
               )}
               {open ? "Hide details" : "Show details"}
             </CollapsibleTrigger>

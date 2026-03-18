@@ -2,10 +2,22 @@ import { memo } from "react";
 import { Skeleton } from "#/components/ui/skeleton";
 import { cn } from "#/lib/utils";
 
-const TINT_CLS = {
-  success: "text-success bg-success/8",
-  warning: "text-warning-foreground bg-warning/8",
-  info: "text-info bg-info/8",
+const TINT_ICON = {
+  success: "text-success-foreground",
+  warning: "text-warning-foreground",
+  info: "text-info-foreground",
+} as const;
+
+const TINT_BG = {
+  success: "bg-success/10",
+  warning: "bg-warning/10",
+  info: "bg-info/10",
+} as const;
+
+const TINT_VAL = {
+  success: "text-success-foreground",
+  warning: "text-warning-foreground",
+  info: "text-info-foreground",
 } as const;
 
 export const StatTile = memo(function StatTile({
@@ -22,22 +34,31 @@ export const StatTile = memo(function StatTile({
   loading?: boolean;
 }) {
   return (
-    <div className="rounded-xl border bg-card p-4">
-      <div className="flex items-center gap-2 mb-3">
+    <div className="rounded-xl border border-border/60 bg-card px-4 py-3.5 flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <span className="text-[10.5px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/80">
+          {label}
+        </span>
         <div
           className={cn(
-            "rounded-md p-1.5",
-            tint ? TINT_CLS[tint] : "text-muted-foreground bg-muted/60",
+            "rounded-lg p-1.5",
+            tint ? cn(TINT_ICON[tint], TINT_BG[tint]) : "text-muted-foreground/50 bg-muted/40",
           )}
         >
           <Icon className="size-3.5" />
         </div>
-        <span className="text-xs font-medium text-muted-foreground">{label}</span>
       </div>
       {loading ? (
         <Skeleton className="h-7 w-16" />
       ) : (
-        <div className="text-2xl font-semibold tabular-nums">{value}</div>
+        <div
+          className={cn(
+            "text-[28px] font-bold tabular-nums tracking-tight leading-none",
+            tint ? TINT_VAL[tint] : "text-foreground",
+          )}
+        >
+          {value}
+        </div>
       )}
     </div>
   );
