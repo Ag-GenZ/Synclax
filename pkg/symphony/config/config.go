@@ -17,6 +17,7 @@ type EffectiveConfig struct {
 	Agent     AgentConfig
 	Codex     CodexConfig
 	Server    ServerConfig
+	Logging   LoggingConfig
 }
 
 type TrackerConfig struct {
@@ -65,6 +66,14 @@ type CodexConfig struct {
 
 type ServerConfig struct {
 	Port *int
+}
+
+type LoggingConfig struct {
+	File       string
+	MaxSizeMB  int
+	MaxBackups int
+	MaxAgeDays int
+	Compress   bool
 }
 
 var (
@@ -116,6 +125,13 @@ func FromWorkflowConfig(cfg map[string]any) (EffectiveConfig, error) {
 		},
 		Server: ServerConfig{
 			Port: intPtr(getNested(cfg, "server", "port")),
+		},
+		Logging: LoggingConfig{
+			File:       str(getNested(cfg, "logging", "file")),
+			MaxSizeMB:  intFromAny(getNested(cfg, "logging", "max_size_mb"), 10),
+			MaxBackups: intFromAny(getNested(cfg, "logging", "max_backups"), 5),
+			MaxAgeDays: intFromAny(getNested(cfg, "logging", "max_age_days"), 0),
+			Compress:   boolFromAny(getNested(cfg, "logging", "compress"), false),
 		},
 	}
 
@@ -189,6 +205,7 @@ func resolveEnvironment(cfg *EffectiveConfig) {
 	}
 
 	cfg.Workspace.Root = expandPath(resolveEnvToken(cfg.Workspace.Root))
+	cfg.Logging.File = expandPath(resolveEnvToken(cfg.Logging.File))
 }
 
 func normalize(cfg *EffectiveConfig) {
@@ -256,6 +273,28 @@ func expandPath(v string) string {
 	}
 	cleaned := filepath.Clean(v)
 	return cleaned
+}
+
+func boolFromAny(v any, fallback bool) bool {
+	switch t := v.(type) {
+	case bool:
+		return t
+	case string:
+		s := strings.ToLower(strings.TrimSpace(t))
+		switch s {
+		case "true", "1", "yes", "y", "on":
+			return true
+		case "false", "0", "no", "n", "off":
+			return false
+		}
+	case int:
+		return t != 0
+	case int64:
+		return t != 0
+	case float64:
+		return t != 0
+	}
+	return fallback
 }
 
 func getNested(root map[string]any, path ...string) any {

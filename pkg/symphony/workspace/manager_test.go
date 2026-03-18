@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -62,5 +63,30 @@ func TestBeforeRun_FailureIsFatal(t *testing.T) {
 	}
 	if err := m.BeforeRun(ctx, ws); err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestCreateForIssue_RejectsSymlinkEscape(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	ctx := context.Background()
+
+	m, err := NewManager(root, HookScripts{Timeout: 5 * time.Second})
+	if err != nil {
+		t.Fatalf("NewManager error: %v", err)
+	}
+
+	// Create a symlink workspace inside the root that points outside the root.
+	linkPath := filepath.Join(root, "MT-1000")
+	if err := os.Symlink(outside, linkPath); err != nil {
+		t.Fatalf("Symlink error: %v", err)
+	}
+
+	_, err = m.CreateForIssue(ctx, "MT-1000")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !errors.Is(err, ErrInvalidWorkspaceCwd) {
+		t.Fatalf("expected ErrInvalidWorkspaceCwd, got %v", err)
 	}
 }

@@ -19,6 +19,7 @@ import (
 	"github.com/wibus-wee/synclax/pkg/symphony/codex"
 	symphonycfg "github.com/wibus-wee/synclax/pkg/symphony/config"
 	"github.com/wibus-wee/synclax/pkg/symphony/domain"
+	symphonylog "github.com/wibus-wee/synclax/pkg/symphony/logging"
 	"github.com/wibus-wee/synclax/pkg/symphony/runtime"
 	"github.com/wibus-wee/synclax/pkg/symphony/tracker"
 	"github.com/wibus-wee/synclax/pkg/symphony/tracker/linear"
@@ -296,6 +297,7 @@ func (o *Orchestrator) applyRuntimeLocked(portOverride *int) error {
 
 	o.cfg = rt.Config
 	o.appliedRevision = rev
+	symphonylog.Configure(o.cfg.Logging)
 
 	ws, err := workspace.NewManager(o.cfg.Workspace.Root, workspace.HookScripts{
 		AfterCreate:  o.cfg.Hooks.AfterCreate,
@@ -350,9 +352,13 @@ func (o *Orchestrator) applyRuntimeLocked(portOverride *int) error {
 }
 
 func (o *Orchestrator) ensureHTTPServerLocked(port *int) {
+	var old *http.Server
+
 	if port == nil {
-		if o.httpServer != nil {
-			o.shutdownHTTP(context.Background())
+		old = o.httpServer
+		o.httpServer = nil
+		if old != nil {
+			go func(s *http.Server) { _ = s.Shutdown(context.Background()) }(old)
 		}
 		return
 	}
@@ -362,7 +368,7 @@ func (o *Orchestrator) ensureHTTPServerLocked(port *int) {
 		return
 	}
 	if o.httpServer != nil {
-		o.shutdownHTTP(context.Background())
+		old = o.httpServer
 	}
 
 	mux := http.NewServeMux()
@@ -375,6 +381,38 @@ func (o *Orchestrator) ensureHTTPServerLocked(port *int) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(snap)
 	})
+	mux.HandleFunc("/api/v1/state", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		snap := o.snapshot()
+		meta := map[string]any{
+			"workflow_path": o.runtime.WorkflowPath(),
+			"revision":      o.appliedRevision,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"meta":     meta,
+			"snapshot": snap,
+		})
+	})
+	mux.HandleFunc("/api/v1/refresh", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		defer cancel()
+
+		o.runtime.RefreshIfNeeded()
+		_ = o.applyRuntimeLocked(nil)
+		o.tick(ctx)
+
+		snap := o.snapshot()
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(snap)
+	})
 
 	srv := &http.Server{
 		Addr:              addr,
@@ -382,6 +420,10 @@ func (o *Orchestrator) ensureHTTPServerLocked(port *int) {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	o.httpServer = srv
+
+	if old != nil {
+		go func(s *http.Server) { _ = s.Shutdown(context.Background()) }(old)
+	}
 	go func() {
 		log.Printf("symphony http_server status=starting addr=%s", addr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -726,6 +768,13 @@ func (o *Orchestrator) onWorkerUpdate(issueID string, upd agent.Update) {
 	applyUsage := func(usage map[string]any) {
 		if usage == nil {
 			return
+		}
+		// `thread/tokenUsage/updated` carries { tokenUsage: { total: {...}, last: {...} } }.
+		// Prefer absolute totals for live display.
+		if nested, ok := usage["total"].(map[string]any); ok && nested != nil {
+			usage = nested
+		} else if nested, ok := usage["last"].(map[string]any); ok && nested != nil {
+			usage = nested
 		}
 		if v, ok := intFromAny(usage["input_tokens"]); ok {
 			r.Live.CodexInputTokens = v

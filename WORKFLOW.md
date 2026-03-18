@@ -16,6 +16,13 @@ tracker:
     - Duplicate
     - Done
 
+logging:
+  file: ./log/symphony.log
+  max_size_mb: 10
+  max_backups: 5
+  max_age_days: 0
+  compress: false
+
 polling:
   interval_ms: 5000
 

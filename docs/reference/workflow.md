@@ -143,6 +143,31 @@ server:
 
 Enables Symphony’s internal debug HTTP server bound to `127.0.0.1:<port>`.
 
+Debug endpoints:
+
+- `GET /healthz`
+- `GET /snapshot` (raw snapshot JSON, for quick inspection)
+- `GET /api/v1/state` (snapshot + metadata)
+- `POST /api/v1/refresh` (force a poll+dispatch cycle, best-effort)
+
+### `logging`
+
+Optional rotating log file sink for Symphony (process-wide `log` output).
+
+```yaml
+logging:
+  file: ./log/symphony.log
+  max_size_mb: 10
+  max_backups: 5
+  max_age_days: 0
+  compress: false
+```
+
+Notes:
+
+- If `logging.file` is omitted/blank, logs stay on stderr/stdout (default).
+- Relative paths are resolved from the process working directory.
+
 ## Prompt template (Liquid)
 
 The body of `WORKFLOW.md` is rendered with Liquid (`github.com/osteele/liquid`) using **strict variables**.

@@ -12,6 +12,7 @@ require (
 	github.com/osteele/liquid v1.7.0
 	github.com/pkg/errors v0.9.1
 	go.uber.org/mock v0.5.2
+	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	gopkg.in/yaml.v3 v3.0.1
 )
 

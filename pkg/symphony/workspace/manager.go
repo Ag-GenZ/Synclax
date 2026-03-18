@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -28,7 +29,10 @@ type HookScripts struct {
 
 type Manager struct {
 	rootAbs string
+	rootCanon string
 	hooks   HookScripts
+
+	mu sync.Mutex
 }
 
 var (
@@ -43,7 +47,7 @@ func NewManager(root string, hooks HookScripts) (*Manager, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Manager{rootAbs: rootAbs, hooks: hooks}, nil
+	return &Manager{rootAbs: rootAbs, rootCanon: "", hooks: hooks}, nil
 }
 
 func (m *Manager) Root() string { return m.rootAbs }
@@ -52,17 +56,18 @@ func (m *Manager) CreateForIssue(ctx context.Context, issueIdentifier string) (W
 	key := sanitizeWorkspaceKey(issueIdentifier)
 	workspacePath := filepath.Join(m.rootAbs, key)
 
+	if err := m.ensureRootReady(); err != nil {
+		return Workspace{}, err
+	}
 	if err := ensureInsideRoot(m.rootAbs, workspacePath); err != nil {
 		return Workspace{}, err
 	}
 
-	if err := os.MkdirAll(m.rootAbs, 0o755); err != nil {
-		return Workspace{}, err
-	}
-
 	createdNow := false
-	stat, err := os.Stat(workspacePath)
+	stat, err := os.Lstat(workspacePath)
 	switch {
+	case err == nil && stat.Mode()&os.ModeSymlink != 0:
+		return Workspace{}, fmt.Errorf("%w: workspace path is a symlink (path=%s)", ErrInvalidWorkspaceCwd, workspacePath)
 	case err == nil && stat.IsDir():
 		createdNow = false
 	case err == nil && !stat.IsDir():
@@ -76,7 +81,13 @@ func (m *Manager) CreateForIssue(ctx context.Context, issueIdentifier string) (W
 		return Workspace{}, err
 	}
 
+	canonicalPath, err := m.canonicalizeSafeWorkspacePath(workspacePath)
+	if err != nil {
+		return Workspace{}, err
+	}
+
 	ws := Workspace{Path: workspacePath, WorkspaceKey: key, CreatedNow: createdNow}
+	ws.Path = canonicalPath
 	if err := m.prepareWorkspace(ws.Path); err != nil {
 		return Workspace{}, err
 	}
@@ -109,17 +120,25 @@ func (m *Manager) AfterRunBestEffort(ctx context.Context, ws Workspace) {
 func (m *Manager) RemoveBestEffort(ctx context.Context, issueIdentifier string) {
 	key := sanitizeWorkspaceKey(issueIdentifier)
 	workspacePath := filepath.Join(m.rootAbs, key)
+	if err := m.ensureRootReady(); err != nil {
+		log.Printf("symphony workspace_remove status=failed error=%v", err)
+		return
+	}
 	if err := ensureInsideRoot(m.rootAbs, workspacePath); err != nil {
 		log.Printf("symphony workspace_remove status=failed error=%v", err)
 		return
 	}
 
-	stat, err := os.Stat(workspacePath)
+	stat, err := os.Lstat(workspacePath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return
 		}
 		log.Printf("symphony workspace_remove status=failed path=%s error=%v", workspacePath, err)
+		return
+	}
+	if stat.Mode()&os.ModeSymlink != 0 {
+		log.Printf("symphony workspace_remove status=failed path=%s error=symlink", workspacePath)
 		return
 	}
 	if !stat.IsDir() {
@@ -190,7 +209,12 @@ func sanitizeWorkspaceKey(identifier string) string {
 			b.WriteByte('_')
 		}
 	}
-	return b.String()
+	key := b.String()
+	switch key {
+	case "", ".", "..":
+		return "_"
+	}
+	return key
 }
 
 func runHook(ctx context.Context, cwd, name, script string, timeout time.Duration, fatal bool) error {
@@ -219,4 +243,69 @@ func runHook(ctx context.Context, cwd, name, script string, timeout time.Duratio
 	}
 	log.Printf("symphony hook status=ok name=%s", name)
 	return nil
+}
+
+func (m *Manager) ensureRootReady() error {
+	if m == nil {
+		return errors.New("nil workspace manager")
+	}
+	if strings.TrimSpace(m.rootAbs) == "" {
+		return errors.New("workspace root is required")
+	}
+	if err := os.MkdirAll(m.rootAbs, 0o755); err != nil {
+		return err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if strings.TrimSpace(m.rootCanon) != "" {
+		return nil
+	}
+	canon, err := filepath.EvalSymlinks(m.rootAbs)
+	if err != nil {
+		return err
+	}
+	canon, err = filepath.Abs(canon)
+	if err != nil {
+		return err
+	}
+	m.rootCanon = canon
+	return nil
+}
+
+func (m *Manager) canonicalizeSafeWorkspacePath(workspacePath string) (string, error) {
+	if err := m.ensureRootReady(); err != nil {
+		return "", err
+	}
+
+	m.mu.Lock()
+	rootCanon := strings.TrimSpace(m.rootCanon)
+	m.mu.Unlock()
+	if rootCanon == "" {
+		return "", errors.New("workspace root is not canonicalized")
+	}
+
+	wsCanon, err := filepath.EvalSymlinks(workspacePath)
+	if err != nil {
+		return "", fmt.Errorf("%w: workspace path unreadable (path=%s err=%v)", ErrInvalidWorkspaceCwd, workspacePath, err)
+	}
+	wsCanon, err = filepath.Abs(wsCanon)
+	if err != nil {
+		return "", err
+	}
+
+	sep := string(filepath.Separator)
+	rootPrefix := rootCanon
+	if !strings.HasSuffix(rootPrefix, sep) {
+		rootPrefix += sep
+	}
+
+	if wsCanon == rootCanon {
+		return "", fmt.Errorf("%w: workspace path resolves to workspace root (path=%s)", ErrInvalidWorkspaceCwd, workspacePath)
+	}
+	if !strings.HasPrefix(wsCanon+sep, rootPrefix) {
+		// This catches symlink escapes where the lexical path is under the root but the
+		// canonical target is outside.
+		return "", fmt.Errorf("%w: workspace path escapes root via symlink (path=%s resolved=%s root=%s)", ErrInvalidWorkspaceCwd, workspacePath, wsCanon, rootCanon)
+	}
+	return wsCanon, nil
 }

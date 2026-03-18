@@ -70,9 +70,18 @@ type Session struct {
 	threadID string
 	proc     *process
 	client   *rpcClient
+
+	mu        sync.Mutex
+	absUsage  tokenTotals
 }
 
 func (s *Session) ThreadID() string { return s.threadID }
+
+type tokenTotals struct {
+	InputTokens  int
+	OutputTokens int
+	TotalTokens  int
+}
 
 func (s *Session) PID() *int {
 	if s == nil || s.proc == nil || s.proc.cmd == nil || s.proc.cmd.Process == nil {
@@ -80,6 +89,111 @@ func (s *Session) PID() *int {
 	}
 	pid := s.proc.cmd.Process.Pid
 	return &pid
+}
+
+func (s *Session) snapshotAbsUsage() tokenTotals {
+	if s == nil {
+		return tokenTotals{}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.absUsage
+}
+
+func (s *Session) applyAbsUsageFromEvent(method string, payload map[string]any) {
+	if s == nil || payload == nil {
+		return
+	}
+
+	asMap := func(v any) (map[string]any, bool) {
+		m, ok := v.(map[string]any)
+		return m, ok
+	}
+
+	getMap := func(m map[string]any, keys ...string) map[string]any {
+		if m == nil {
+			return nil
+		}
+		for _, k := range keys {
+			if v, ok := m[k]; ok {
+				if mm, ok := asMap(v); ok {
+					return mm
+				}
+			}
+		}
+		return nil
+	}
+
+	extract := func(m map[string]any) tokenTotals {
+		if m == nil {
+			return tokenTotals{}
+		}
+		in := asInt(m["input_tokens"], 0)
+		in = asInt(m["inputTokens"], in)
+		in = asInt(m["prompt_tokens"], in)
+		in = asInt(m["promptTokens"], in)
+
+		out := asInt(m["output_tokens"], 0)
+		out = asInt(m["outputTokens"], out)
+		out = asInt(m["completion_tokens"], out)
+		out = asInt(m["completionTokens"], out)
+
+		total := asInt(m["total_tokens"], 0)
+		total = asInt(m["totalTokens"], total)
+
+		return tokenTotals{InputTokens: in, OutputTokens: out, TotalTokens: total}
+	}
+
+	m := strings.ToLower(strings.TrimSpace(method))
+	if strings.Contains(m, "tokenu") && strings.Contains(m, "updated") {
+		tokenUsage := getMap(payload, "tokenUsage", "token_usage")
+		if tokenUsage == nil {
+			return
+		}
+		if last := getMap(tokenUsage, "last"); last != nil {
+			delta := extract(last)
+			s.mu.Lock()
+			s.absUsage.InputTokens += delta.InputTokens
+			s.absUsage.OutputTokens += delta.OutputTokens
+			s.absUsage.TotalTokens += delta.TotalTokens
+			s.mu.Unlock()
+			return
+		}
+		if total := getMap(tokenUsage, "total"); total != nil {
+			abs := extract(total)
+			s.mu.Lock()
+			s.absUsage = abs
+			s.mu.Unlock()
+			return
+		}
+		return
+	}
+
+	// Fallback: interpret `turn/completed.usage` as either absolute totals or delta.
+	// We decide based on monotonicity against the current session totals.
+	if m == "turn/completed" {
+		usage := getMap(payload, "usage", "tokenUsage", "token_usage")
+		if usage == nil {
+			usage = payload
+		}
+		extracted := extract(usage)
+		if extracted.InputTokens == 0 && extracted.OutputTokens == 0 && extracted.TotalTokens == 0 {
+			return
+		}
+
+		s.mu.Lock()
+		cur := s.absUsage
+		if extracted.TotalTokens >= cur.TotalTokens &&
+			extracted.InputTokens >= cur.InputTokens &&
+			extracted.OutputTokens >= cur.OutputTokens {
+			s.absUsage = extracted
+		} else {
+			s.absUsage.InputTokens += extracted.InputTokens
+			s.absUsage.OutputTokens += extracted.OutputTokens
+			s.absUsage.TotalTokens += extracted.TotalTokens
+		}
+		s.mu.Unlock()
+	}
 }
 
 func (s *Session) Close() error {
@@ -141,6 +255,8 @@ func (a *AppServer) RunTurn(ctx context.Context, session *Session, workspacePath
 		return nil, err
 	}
 
+	startUsage := session.snapshotAbsUsage()
+
 	result := &TurnResult{TurnID: turnID}
 	if onEvent != nil {
 		onEvent("turn/started", map[string]any{
@@ -165,10 +281,20 @@ func (a *AppServer) RunTurn(ctx context.Context, session *Session, workspacePath
 				onEvent(msg.method, msg.payload)
 			}
 
-			updateUsageAndRateLimits(result, msg.payload)
+			session.applyAbsUsageFromEvent(msg.method, msg.payload)
+			updateRateLimits(result, msg.payload)
 
 			switch msg.method {
 			case "turn/completed":
+				endUsage := session.snapshotAbsUsage()
+				// Compute per-turn deltas from session-wide totals, when possible.
+				if endUsage.TotalTokens >= startUsage.TotalTokens &&
+					endUsage.InputTokens >= startUsage.InputTokens &&
+					endUsage.OutputTokens >= startUsage.OutputTokens {
+					result.InputTokens = endUsage.InputTokens - startUsage.InputTokens
+					result.OutputTokens = endUsage.OutputTokens - startUsage.OutputTokens
+					result.TotalTokens = endUsage.TotalTokens - startUsage.TotalTokens
+				}
 				return result, nil
 			case "turn/failed":
 				return nil, &Error{Category: ErrTurnFailed.Error(), Err: errors.New("turn failed")}
@@ -230,8 +356,14 @@ func (c *rpcClient) start(ctx context.Context) error {
 		return nil
 	}
 	if _, err := c.request(ctx, "initialize", map[string]any{
-		"clientInfo":   map[string]any{"name": "symphony", "version": "1.0"},
-		"capabilities": map[string]any{},
+		"clientInfo": map[string]any{
+			"name":    "symphony",
+			"title":   "Symphony Orchestrator",
+			"version": "1.0",
+		},
+		"capabilities": map[string]any{
+			"experimentalApi": true,
+		},
 	}); err != nil {
 		return err
 	}
@@ -591,7 +723,7 @@ func isUserInputRequired(method string, payload map[string]any) bool {
 	return false
 }
 
-func updateUsageAndRateLimits(res *TurnResult, payload map[string]any) {
+func updateRateLimits(res *TurnResult, payload map[string]any) {
 	if res == nil || payload == nil {
 		return
 	}
@@ -602,6 +734,9 @@ func updateUsageAndRateLimits(res *TurnResult, payload map[string]any) {
 	}
 
 	getMap := func(m map[string]any, keys ...string) map[string]any {
+		if m == nil {
+			return nil
+		}
 		for _, k := range keys {
 			if v, ok := m[k]; ok {
 				if mm, ok := asMap(v); ok {
@@ -612,36 +747,15 @@ func updateUsageAndRateLimits(res *TurnResult, payload map[string]any) {
 		return nil
 	}
 
-	// Best-effort extraction; tolerate schema drift across Codex protocol versions.
-	//
-	// Seen shapes include:
-	// - { usage: { input_tokens, output_tokens, total_tokens, rate_limits } }
-	// - { tokenUsage: { inputTokens, outputTokens, totalTokens } }
-	// - { inputTokens, outputTokens, totalTokens }
-	usage := getMap(payload, "usage", "tokenUsage", "token_usage")
-	if usage == nil {
-		usage = payload
-	}
-
-	res.InputTokens = asInt(usage["input_tokens"], res.InputTokens)
-	res.InputTokens = asInt(usage["inputTokens"], res.InputTokens)
-	res.InputTokens = asInt(usage["prompt_tokens"], res.InputTokens)
-	res.InputTokens = asInt(usage["promptTokens"], res.InputTokens)
-
-	res.OutputTokens = asInt(usage["output_tokens"], res.OutputTokens)
-	res.OutputTokens = asInt(usage["outputTokens"], res.OutputTokens)
-	res.OutputTokens = asInt(usage["completion_tokens"], res.OutputTokens)
-	res.OutputTokens = asInt(usage["completionTokens"], res.OutputTokens)
-
-	res.TotalTokens = asInt(usage["total_tokens"], res.TotalTokens)
-	res.TotalTokens = asInt(usage["totalTokens"], res.TotalTokens)
-
-	// Rate limits
-	if rl := getMap(usage, "rate_limits", "rateLimits"); rl != nil {
-		res.RateLimits = rl
-	}
 	if rl := getMap(payload, "rate_limits", "rateLimits"); rl != nil {
 		res.RateLimits = rl
+		return
+	}
+	if usage := getMap(payload, "usage"); usage != nil {
+		if rl := getMap(usage, "rate_limits", "rateLimits"); rl != nil {
+			res.RateLimits = rl
+			return
+		}
 	}
 }
 
