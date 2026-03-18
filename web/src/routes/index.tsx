@@ -312,7 +312,7 @@ function Dashboard() {
                 ) : workflows.length === 0 ? (
                   <p className="px-2 py-2 text-xs text-muted-foreground">None configured</p>
                 ) : (
-                  <Accordion type="single" collapsible defaultValue="wf">
+                  <Accordion defaultValue={["wf"]}>
                     <AccordionItem value="wf" className="border-0">
                       <AccordionTrigger className="text-xs py-1.5 px-2 hover:no-underline">
                         {workflows.length} workflow{workflows.length !== 1 && "s"}
@@ -479,7 +479,7 @@ function Dashboard() {
                           <RechartsTooltip
                             contentStyle={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }}
                             labelStyle={{ color: "var(--muted-foreground)" }}
-                            formatter={(v: number | string) => [fmtTokens(Number(v)), "Tokens"]}
+                            formatter={(value) => [fmtTokens(Number(value ?? 0)), "Tokens"]}
                           />
                           <Area type="monotone" dataKey="tokens" stroke="var(--info)" strokeWidth={2} fill="url(#tokenGrad)" />
                         </AreaChart>
