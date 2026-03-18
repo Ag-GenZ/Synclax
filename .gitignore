@@ -12,6 +12,10 @@ dist-ssr
 .vinxi
 __unconfig*
 todos.json
-.vitepress
+# VitePress cache/build output (keep config tracked)
+.vitepress/cache
+.vitepress/dist
+docs/.vitepress/cache
+docs/.vitepress/dist
 WORKFLOW_*.md
 log
