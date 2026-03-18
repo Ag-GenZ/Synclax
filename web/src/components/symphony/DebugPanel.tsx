@@ -191,7 +191,7 @@ export const DebugPanel = memo(function DebugPanel({
                 />
                 <StatBlock
                   label="Total Tokens"
-                  value={state.snapshot.codex_totals.total_tokens.toLocaleString()}
+                  value={state.snapshot.agent_totals.total_tokens.toLocaleString()}
                 />
               </div>
             </CardPanel>

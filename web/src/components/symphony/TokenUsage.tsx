@@ -1,9 +1,9 @@
 import { memo } from "react";
-import type { CodexTotals } from "#/api-gen/types.gen";
+import type { AgentTotals } from "#/api-gen/types.gen";
 import { cn } from "#/lib/utils";
 import { fmtTokens, fmtSeconds } from "./utils";
 
-export const TokenUsage = memo(function TokenUsage({ totals }: { totals: CodexTotals }) {
+export const TokenUsage = memo(function TokenUsage({ totals }: { totals: AgentTotals }) {
   const inputPct =
     totals.total_tokens > 0 ? (totals.input_tokens / totals.total_tokens) * 100 : 50;
 

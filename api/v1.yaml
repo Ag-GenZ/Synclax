@@ -224,7 +224,7 @@ components:
 
     SymphonySnapshot:
       type: object
-      required: [running, retrying, codex_totals]
+      required: [running, retrying, agent_totals]
       properties:
         running:
           type: array
@@ -238,8 +238,8 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/SymphonyCompletedEntry"
-        codex_totals:
-          $ref: "#/components/schemas/CodexTotals"
+        agent_totals:
+          $ref: "#/components/schemas/AgentTotals"
         rate_limits:
           type: object
           additionalProperties: true
@@ -283,7 +283,7 @@ components:
 
     SymphonyLiveSession:
       type: object
-      required: [codex_input_tokens, codex_output_tokens, codex_total_tokens, turn_count]
+      required: [input_tokens, output_tokens, total_tokens, turn_count]
       properties:
         session_id:
           type: string
@@ -294,27 +294,27 @@ components:
         turn_id:
           type: string
           nullable: true
-        codex_app_server_pid:
+        agent_pid:
           type: integer
           format: int32
           nullable: true
-        last_codex_event:
+        last_agent_event:
           type: string
           nullable: true
-        last_codex_timestamp:
+        last_agent_timestamp:
           type: string
           format: date-time
           nullable: true
-        last_codex_message:
+        last_agent_message:
           type: string
           nullable: true
-        codex_input_tokens:
+        input_tokens:
           type: integer
           format: int32
-        codex_output_tokens:
+        output_tokens:
           type: integer
           format: int32
-        codex_total_tokens:
+        total_tokens:
           type: integer
           format: int32
         turn_count:
@@ -348,7 +348,7 @@ components:
 
     SymphonyCompletedEntry:
       type: object
-      required: [issue, issue_id, issue_identifier, started_at, ended_at, duration_secs, status, codex_input_tokens, codex_output_tokens, codex_total_tokens, turns_run]
+      required: [issue, issue_id, issue_identifier, started_at, ended_at, duration_secs, status, input_tokens, output_tokens, total_tokens, turns_run]
       properties:
         issue:
           $ref: "#/components/schemas/SymphonyIssue"
@@ -377,13 +377,13 @@ components:
         error:
           type: string
           nullable: true
-        codex_input_tokens:
+        input_tokens:
           type: integer
           format: int32
-        codex_output_tokens:
+        output_tokens:
           type: integer
           format: int32
-        codex_total_tokens:
+        total_tokens:
           type: integer
           format: int32
         turns_run:
@@ -395,10 +395,10 @@ components:
         turn_id:
           type: string
           nullable: true
-        last_codex_event:
+        last_agent_event:
           type: string
           nullable: true
-        last_codex_message:
+        last_agent_message:
           type: string
           nullable: true
 
@@ -457,7 +457,7 @@ components:
           type: string
           nullable: true
 
-    CodexTotals:
+    AgentTotals:
       type: object
       required: [input_tokens, output_tokens, total_tokens, seconds_running]
       properties:

@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/wibus-wee/synclax/pkg/symphony/agent"
-	"github.com/wibus-wee/synclax/pkg/symphony/codex"
 	"github.com/wibus-wee/synclax/pkg/symphony/domain"
+	"github.com/wibus-wee/synclax/pkg/symphony/provider"
 	"github.com/wibus-wee/synclax/pkg/symphony/runtime"
 	"github.com/wibus-wee/synclax/pkg/symphony/tracker"
 	"github.com/wibus-wee/synclax/pkg/symphony/workspace"
@@ -53,6 +53,21 @@ func (r *fakeRunner) RunAttempt(_ context.Context, _ domain.Issue, _ *int, _ fun
 	return r.res, r.err
 }
 
+type fakeProvider struct{}
+
+func (p *fakeProvider) StartSession(_ context.Context, _ string) (provider.Session, error) {
+	return nil, nil
+}
+
+func (p *fakeProvider) RunTurn(
+	_ context.Context,
+	_ provider.Session,
+	_, _, _ string,
+	_ func(event string, payload map[string]any),
+) (*provider.TurnResult, error) {
+	return nil, nil
+}
+
 func mustOrchestrator(t *testing.T, workflow string) (*Orchestrator, context.CancelFunc) {
 	t.Helper()
 	dir := t.TempDir()
@@ -73,7 +88,7 @@ func mustOrchestrator(t *testing.T, workflow string) (*Orchestrator, context.Can
 	}
 	rt, _ := o.runtime.Get()
 	o.cfg = rt.Config
-	o.codex = codex.NewAppServer(codex.AppServerOptions{Command: "true"})
+	o.provider = &fakeProvider{}
 
 	ws, err := workspace.NewManager(t.TempDir(), workspace.HookScripts{})
 	if err != nil {
@@ -114,7 +129,7 @@ codex:
 			WorkspacePath: "",
 		},
 	}
-	o.newRunner = func(_ *runtime.EffectiveRuntime, _ tracker.Client, _ *workspace.Manager, _ *codex.AppServer) attemptRunner {
+	o.newRunner = func(_ *runtime.EffectiveRuntime, _ tracker.Client, _ *workspace.Manager, _ provider.Provider) attemptRunner {
 		return r
 	}
 
@@ -181,7 +196,7 @@ codex:
 	}
 
 	r := &fakeRunner{called: make(chan struct{})}
-	o.newRunner = func(_ *runtime.EffectiveRuntime, _ tracker.Client, _ *workspace.Manager, _ *codex.AppServer) attemptRunner {
+	o.newRunner = func(_ *runtime.EffectiveRuntime, _ tracker.Client, _ *workspace.Manager, _ provider.Provider) attemptRunner {
 		return r
 	}
 

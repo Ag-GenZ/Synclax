@@ -201,8 +201,8 @@ function SymphonyDashboard() {
   const runningCount = snapshot?.running.length ?? 0;
   const retryingCount = snapshot?.retrying.length ?? 0;
   const completedCount = snapshot?.completed?.length ?? 0;
-  const totalTokens = snapshot?.codex_totals.total_tokens ?? 0;
-  const secondsRunning = snapshot?.codex_totals.seconds_running ?? 0;
+  const totalTokens = snapshot?.agent_totals.total_tokens ?? 0;
+  const secondsRunning = snapshot?.agent_totals.seconds_running ?? 0;
   const rateLimits = snapshot?.rate_limits;
   const hasRateLimits = rateLimits && Object.keys(rateLimits).length > 0;
   const isLoading = healthLoading || workflowsLoading || snapLoading;
@@ -656,7 +656,7 @@ function SymphonyDashboard() {
                     <CardHeader>
                       <CardTitle>Token Usage</CardTitle>
                       <CardDescription>
-                        Cumulative Codex token consumption across all agent sessions.
+                        Cumulative token consumption across all agent sessions.
                       </CardDescription>
                     </CardHeader>
                     <CardPanel>
@@ -666,7 +666,7 @@ function SymphonyDashboard() {
                           <Skeleton className="h-8 w-full" />
                         </div>
                       ) : snapshot ? (
-                        <TokenUsage totals={snapshot.codex_totals} />
+                        <TokenUsage totals={snapshot.agent_totals} />
                       ) : (
                         <p className="text-sm text-muted-foreground">No data.</p>
                       )}

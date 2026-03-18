@@ -69,11 +69,11 @@ export const CompletedRow = memo(function CompletedRow({
           <TooltipTrigger>
             <span className="flex items-center gap-1">
               <ZapIcon className="size-3" />
-              {fmtTokens(entry.codex_total_tokens)}
+              {fmtTokens(entry.total_tokens)}
             </span>
           </TooltipTrigger>
           <TooltipPopup className="font-mono text-xs">
-            in={entry.codex_input_tokens} out={entry.codex_output_tokens} turns={entry.turns_run}
+            in={entry.input_tokens} out={entry.output_tokens} turns={entry.turns_run}
           </TooltipPopup>
         </Tooltip>
         <Tooltip>

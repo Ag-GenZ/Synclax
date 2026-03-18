@@ -35,13 +35,13 @@ type LiveSession struct {
 	SessionID          string      `json:"session_id,omitempty"`
 	ThreadID           string      `json:"thread_id,omitempty"`
 	TurnID             string      `json:"turn_id,omitempty"`
-	CodexAppServerPID  *int        `json:"codex_app_server_pid,omitempty"`
-	LastCodexEvent     *string     `json:"last_codex_event,omitempty"`
-	LastCodexTimestamp *time.Time  `json:"last_codex_timestamp,omitempty"`
-	LastCodexMessage   *string     `json:"last_codex_message,omitempty"`
-	CodexInputTokens   int         `json:"codex_input_tokens"`
-	CodexOutputTokens  int         `json:"codex_output_tokens"`
-	CodexTotalTokens   int         `json:"codex_total_tokens"`
+	AgentPID           *int        `json:"agent_pid,omitempty"`
+	LastAgentEvent     *string     `json:"last_agent_event,omitempty"`
+	LastAgentTimestamp *time.Time  `json:"last_agent_timestamp,omitempty"`
+	LastAgentMessage   *string     `json:"last_agent_message,omitempty"`
+	InputTokens        int         `json:"input_tokens"`
+	OutputTokens       int         `json:"output_tokens"`
+	TotalTokens        int         `json:"total_tokens"`
 	TurnCount          int         `json:"turn_count"`
 	EventLog           []LiveEvent `json:"event_log,omitempty"`
 }
@@ -85,18 +85,18 @@ type CompletedEntry struct {
 	Status string  `json:"status"`
 	Error  *string `json:"error,omitempty"`
 
-	CodexInputTokens  int `json:"codex_input_tokens"`
-	CodexOutputTokens int `json:"codex_output_tokens"`
-	CodexTotalTokens  int `json:"codex_total_tokens"`
+	InputTokens  int `json:"input_tokens"`
+	OutputTokens int `json:"output_tokens"`
+	TotalTokens  int `json:"total_tokens"`
 	TurnsRun          int `json:"turns_run"`
 
-	ThreadID         *string `json:"thread_id,omitempty"`
-	TurnID           *string `json:"turn_id,omitempty"`
-	LastCodexEvent   *string `json:"last_codex_event,omitempty"`
-	LastCodexMessage *string `json:"last_codex_message,omitempty"`
+	ThreadID          *string `json:"thread_id,omitempty"`
+	TurnID            *string `json:"turn_id,omitempty"`
+	LastAgentEvent    *string `json:"last_agent_event,omitempty"`
+	LastAgentMessage  *string `json:"last_agent_message,omitempty"`
 }
 
-type CodexTotals struct {
+type AgentTotals struct {
 	InputTokens    int     `json:"input_tokens"`
 	OutputTokens   int     `json:"output_tokens"`
 	TotalTokens    int     `json:"total_tokens"`

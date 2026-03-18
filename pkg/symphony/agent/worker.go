@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/wibus-wee/synclax/pkg/symphony/codex"
 	symphonycfg "github.com/wibus-wee/synclax/pkg/symphony/config"
 	"github.com/wibus-wee/synclax/pkg/symphony/domain"
+	"github.com/wibus-wee/synclax/pkg/symphony/provider"
 	"github.com/wibus-wee/synclax/pkg/symphony/template"
 	"github.com/wibus-wee/synclax/pkg/symphony/tracker"
 	"github.com/wibus-wee/synclax/pkg/symphony/workspace"
@@ -16,7 +16,7 @@ import (
 type Worker struct {
 	Tracker   tracker.Client
 	Workspace *workspace.Manager
-	Codex     *codex.AppServer
+	Provider  provider.Provider
 	Renderer  *template.Renderer
 	Config    symphonycfg.EffectiveConfig
 }
@@ -27,13 +27,13 @@ type Update struct {
 }
 
 type Result struct {
-	FinalIssue        domain.Issue
-	TurnsRun          int
-	WorkspacePath     string
-	CodexInputTokens  int
-	CodexOutputTokens int
-	CodexTotalTokens  int
-	CodexRateLimits   map[string]any
+	FinalIssue    domain.Issue
+	TurnsRun      int
+	WorkspacePath string
+	InputTokens   int
+	OutputTokens  int
+	TotalTokens   int
+	RateLimits    map[string]any
 }
 
 func (w *Worker) RunAttempt(ctx context.Context, issue domain.Issue, attempt *int, onUpdate func(Update)) (Result, error) {
@@ -63,14 +63,15 @@ func (w *Worker) RunAttempt(ctx context.Context, issue domain.Issue, attempt *in
 	defer w.Workspace.AfterRunBestEffort(ctx, ws)
 
 	emitPhase("LaunchingAgentProcess", nil)
-	session, err := w.Codex.StartSession(ctx, ws.Path)
+	session, err := w.Provider.StartSession(ctx, ws.Path)
 	if err != nil {
 		return Result{}, err
 	}
 	defer session.Close()
 	emitPhase("InitializingSession", map[string]any{
-		"thread_id":            session.ThreadID(),
-		"codex_app_server_pid": session.PID(),
+		"session_id": session.SessionID(),
+		"thread_id":  session.SessionID(),
+		"agent_pid":  session.PID(),
 	})
 
 	turns := 0
@@ -96,7 +97,7 @@ func (w *Worker) RunAttempt(ctx context.Context, issue domain.Issue, attempt *in
 
 		emitPhase("StreamingTurn", map[string]any{"turn_count": turnNumber})
 		title := fmt.Sprintf("%s: %s", issue.Identifier, issue.Title)
-		turnRes, err := w.Codex.RunTurn(ctx, session, ws.Path, title, promptText, func(event string, payload map[string]any) {
+		turnRes, err := w.Provider.RunTurn(ctx, session, ws.Path, title, promptText, func(event string, payload map[string]any) {
 			emit(event, payload)
 		})
 		if err != nil {
@@ -110,6 +111,11 @@ func (w *Worker) RunAttempt(ctx context.Context, issue domain.Issue, attempt *in
 				rateLimits = turnRes.RateLimits
 			}
 		}
+		emit("symphony/token_update", map[string]any{
+			"input_tokens":  inputTokens,
+			"output_tokens": outputTokens,
+			"total_tokens":  totalTokens,
+		})
 
 		refreshed, err := w.Tracker.FetchIssueStatesByIDs(ctx, []string{issue.ID})
 		if err != nil {
@@ -126,13 +132,13 @@ func (w *Worker) RunAttempt(ctx context.Context, issue domain.Issue, attempt *in
 
 	emitPhase("Finishing", map[string]any{"turn_count": turns})
 	return Result{
-		FinalIssue:        issue,
-		TurnsRun:          turns,
-		WorkspacePath:     ws.Path,
-		CodexInputTokens:  inputTokens,
-		CodexOutputTokens: outputTokens,
-		CodexTotalTokens:  totalTokens,
-		CodexRateLimits:   rateLimits,
+		FinalIssue:    issue,
+		TurnsRun:      turns,
+		WorkspacePath: ws.Path,
+		InputTokens:   inputTokens,
+		OutputTokens:  outputTokens,
+		TotalTokens:   totalTokens,
+		RateLimits:    rateLimits,
 	}, nil
 }
 
