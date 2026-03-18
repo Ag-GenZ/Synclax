@@ -296,7 +296,7 @@ func (m *Manager) Snapshot(workflowID string) (map[string]any, error) {
 	}
 
 	if orch == nil {
-		totals := orchestrator.CodexTotals{SecondsRunning: uptime}
+		totals := orchestrator.AgentTotals{SecondsRunning: uptime}
 		completed := []orchestrator.CompletedEntry{}
 		rateLimits := map[string]any{}
 
@@ -319,20 +319,20 @@ func (m *Manager) Snapshot(workflowID string) (map[string]any, error) {
 			"running":      []any{},
 			"retrying":     []any{},
 			"completed":    completed,
-			"codex_totals": totals,
+			"agent_totals": totals,
 			"rate_limits":  rateLimits,
 		}, nil
 	}
 
 	snap := orch.Snapshot()
-	if v, ok := snap["codex_totals"].(orchestrator.CodexTotals); ok {
+	if v, ok := snap["agent_totals"].(orchestrator.AgentTotals); ok {
 		v.SecondsRunning = uptime
-		snap["codex_totals"] = v
-	} else if v, ok := snap["codex_totals"].(*orchestrator.CodexTotals); ok && v != nil {
+		snap["agent_totals"] = v
+	} else if v, ok := snap["agent_totals"].(*orchestrator.AgentTotals); ok && v != nil {
 		v.SecondsRunning = uptime
-	} else if v, ok := snap["codex_totals"].(map[string]any); ok && v != nil {
+	} else if v, ok := snap["agent_totals"].(map[string]any); ok && v != nil {
 		v["seconds_running"] = uptime
-		snap["codex_totals"] = v
+		snap["agent_totals"] = v
 	}
 
 	return snap, nil

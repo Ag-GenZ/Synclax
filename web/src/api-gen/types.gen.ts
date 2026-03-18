@@ -60,7 +60,7 @@ export type SymphonySnapshot = {
     running: Array<SymphonyRunningEntry>;
     retrying: Array<SymphonyRetryEntry>;
     completed?: Array<SymphonyCompletedEntry>;
-    codex_totals: CodexTotals;
+    agent_totals: AgentTotals;
     rate_limits?: {
         [key: string]: unknown;
     };
@@ -87,13 +87,13 @@ export type SymphonyLiveSession = {
     session_id?: string | null;
     thread_id?: string | null;
     turn_id?: string | null;
-    codex_app_server_pid?: number | null;
-    last_codex_event?: string | null;
-    last_codex_timestamp?: string | null;
-    last_codex_message?: string | null;
-    codex_input_tokens: number;
-    codex_output_tokens: number;
-    codex_total_tokens: number;
+    agent_pid?: number | null;
+    last_agent_event?: string | null;
+    last_agent_timestamp?: string | null;
+    last_agent_message?: string | null;
+    input_tokens: number;
+    output_tokens: number;
+    total_tokens: number;
     turn_count: number;
     event_log?: Array<LiveEvent>;
 };
@@ -118,14 +118,14 @@ export type SymphonyCompletedEntry = {
     duration_secs: number;
     status: string;
     error?: string | null;
-    codex_input_tokens: number;
-    codex_output_tokens: number;
-    codex_total_tokens: number;
+    input_tokens: number;
+    output_tokens: number;
+    total_tokens: number;
     turns_run: number;
     thread_id?: string | null;
     turn_id?: string | null;
-    last_codex_event?: string | null;
-    last_codex_message?: string | null;
+    last_agent_event?: string | null;
+    last_agent_message?: string | null;
 };
 
 export type SymphonyIssue = {
@@ -149,7 +149,7 @@ export type SymphonyBlockerRef = {
     state?: string | null;
 };
 
-export type CodexTotals = {
+export type AgentTotals = {
     input_tokens: number;
     output_tokens: number;
     total_tokens: number;

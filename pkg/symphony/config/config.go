@@ -15,6 +15,7 @@ type EffectiveConfig struct {
 	Workspace WorkspaceConfig
 	Hooks     HooksConfig
 	Agent     AgentConfig
+	Provider  ProviderConfig
 	Codex     CodexConfig
 	Server    ServerConfig
 	Logging   LoggingConfig
@@ -50,6 +51,11 @@ type AgentConfig struct {
 	MaxRetryBackoff            time.Duration
 	MaxTurns                   int
 	MaxConcurrentAgentsByState map[string]int
+	StallTimeout               time.Duration
+}
+
+type ProviderConfig struct {
+	Kind string
 }
 
 type CodexConfig struct {
@@ -59,7 +65,6 @@ type CodexConfig struct {
 	TurnSandboxPolicy any
 	TurnTimeout       time.Duration
 	ReadTimeout       time.Duration
-	StallTimeout      time.Duration
 }
 
 type ServerConfig struct {
@@ -75,12 +80,19 @@ type LoggingConfig struct {
 }
 
 var (
-	ErrMissingCodexCommand = errors.New("missing_codex_command")
+	ErrUnsupportedProviderKind = errors.New("unsupported_provider_kind")
+	ErrMissingCodexCommand     = errors.New("missing_codex_command")
 )
 
 func FromWorkflowConfig(cfg map[string]any) (EffectiveConfig, error) {
 	// Collect the entire raw tracker map as Params.
 	trackerParams := rawMap(getNested(cfg, "tracker"))
+
+	stallTimeoutAny := getNested(cfg, "agent", "stall_timeout_ms")
+	if stallTimeoutAny == nil {
+		// Back-compat: keep reading from codex stanza.
+		stallTimeoutAny = getNested(cfg, "codex", "stall_timeout_ms")
+	}
 
 	effective := EffectiveConfig{
 		Tracker: TrackerConfig{
@@ -109,6 +121,10 @@ func FromWorkflowConfig(cfg map[string]any) (EffectiveConfig, error) {
 			MaxTurns:                   intFromAny(getNested(cfg, "agent", "max_turns"), 20),
 			MaxRetryBackoff:            timeFromMsAny(getNested(cfg, "agent", "max_retry_backoff_ms"), 300000),
 			MaxConcurrentAgentsByState: stateConcurrencyMap(getNested(cfg, "agent", "max_concurrent_agents_by_state")),
+			StallTimeout:               timeFromMsAny(stallTimeoutAny, 300000),
+		},
+		Provider: ProviderConfig{
+			Kind: str(getNested(cfg, "provider", "kind")),
 		},
 		Codex: CodexConfig{
 			Command:           str(getNested(cfg, "codex", "command")),
@@ -117,7 +133,6 @@ func FromWorkflowConfig(cfg map[string]any) (EffectiveConfig, error) {
 			TurnSandboxPolicy: getNested(cfg, "codex", "turn_sandbox_policy"),
 			TurnTimeout:       timeFromMsAny(getNested(cfg, "codex", "turn_timeout_ms"), 3600000),
 			ReadTimeout:       timeFromMsAny(getNested(cfg, "codex", "read_timeout_ms"), 5000),
-			StallTimeout:      timeFromMsAny(getNested(cfg, "codex", "stall_timeout_ms"), 300000),
 		},
 		Server: ServerConfig{
 			Port: intPtr(getNested(cfg, "server", "port")),
@@ -156,6 +171,9 @@ func applyDefaults(cfg *EffectiveConfig) {
 		cfg.Workspace.Root = filepath.Join(os.TempDir(), "symphony_workspaces")
 	}
 
+	if strings.TrimSpace(cfg.Provider.Kind) == "" {
+		cfg.Provider.Kind = "codex"
+	}
 	if cfg.Codex.Command == "" {
 		cfg.Codex.Command = "codex app-server"
 	}
@@ -203,6 +221,7 @@ func resolveEnvironment(cfg *EffectiveConfig) {
 
 func normalize(cfg *EffectiveConfig) {
 	cfg.Tracker.Kind = strings.TrimSpace(cfg.Tracker.Kind)
+	cfg.Provider.Kind = strings.TrimSpace(cfg.Provider.Kind)
 
 	for i := range cfg.Tracker.ActiveStates {
 		cfg.Tracker.ActiveStates[i] = strings.TrimSpace(cfg.Tracker.ActiveStates[i])
@@ -213,8 +232,13 @@ func normalize(cfg *EffectiveConfig) {
 }
 
 func validate(cfg EffectiveConfig) error {
-	if strings.TrimSpace(cfg.Codex.Command) == "" {
-		return ErrMissingCodexCommand
+	switch strings.TrimSpace(cfg.Provider.Kind) {
+	case "", "codex":
+		if strings.TrimSpace(cfg.Codex.Command) == "" {
+			return ErrMissingCodexCommand
+		}
+	default:
+		return ErrUnsupportedProviderKind
 	}
 	return nil
 }

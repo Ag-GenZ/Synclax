@@ -17,10 +17,10 @@ import (
 	"time"
 
 	"github.com/wibus-wee/synclax/pkg/symphony/agent"
-	"github.com/wibus-wee/synclax/pkg/symphony/codex"
 	symphonycfg "github.com/wibus-wee/synclax/pkg/symphony/config"
 	"github.com/wibus-wee/synclax/pkg/symphony/domain"
 	symphonylog "github.com/wibus-wee/synclax/pkg/symphony/logging"
+	"github.com/wibus-wee/synclax/pkg/symphony/provider"
 	"github.com/wibus-wee/synclax/pkg/symphony/runtime"
 	"github.com/wibus-wee/synclax/pkg/symphony/tracker"
 	"github.com/wibus-wee/synclax/pkg/symphony/tracker/linear"
@@ -42,9 +42,9 @@ type Orchestrator struct {
 	cfg             symphonycfg.EffectiveConfig
 	tracker         tracker.Client
 	workspace       *workspace.Manager
-	codex           *codex.AppServer
+	provider        provider.Provider
 
-	newRunner func(rt *runtime.EffectiveRuntime, tr tracker.Client, ws *workspace.Manager, codexSrv *codex.AppServer) attemptRunner
+	newRunner func(rt *runtime.EffectiveRuntime, tr tracker.Client, ws *workspace.Manager, prov provider.Provider) attemptRunner
 
 	running map[string]*RunningEntry
 	claimed map[string]struct{}
@@ -56,8 +56,8 @@ type Orchestrator struct {
 	stateDir string
 	stats    StatsStore
 
-	codexTotals     CodexTotals
-	codexRateLimits map[string]any
+	agentTotals     AgentTotals
+	agentRateLimits map[string]any
 
 	httpServer *http.Server
 }
@@ -67,8 +67,8 @@ type attemptRunner interface {
 }
 
 type StatsStore interface {
-	Load(ctx context.Context, maxAttempts int) (CodexTotals, map[string]any, []CompletedEntry, error)
-	Record(ctx context.Context, totals CodexTotals, rateLimits map[string]any, entry CompletedEntry) error
+	Load(ctx context.Context, maxAttempts int) (AgentTotals, map[string]any, []CompletedEntry, error)
+	Record(ctx context.Context, totals AgentTotals, rateLimits map[string]any, entry CompletedEntry) error
 }
 
 func (o *Orchestrator) Snapshot() map[string]any {
@@ -76,7 +76,7 @@ func (o *Orchestrator) Snapshot() map[string]any {
 		return map[string]any{
 			"running":      []any{},
 			"retrying":     []any{},
-			"codex_totals": CodexTotals{},
+			"agent_totals": AgentTotals{},
 			"rate_limits":  map[string]any{},
 		}
 	}
@@ -96,11 +96,11 @@ func New(opts Options) (*Orchestrator, error) {
 		completed: map[string]struct{}{},
 		stats:     opts.StatsStore,
 	}
-	o.newRunner = func(rt *runtime.EffectiveRuntime, tr tracker.Client, ws *workspace.Manager, codexSrv *codex.AppServer) attemptRunner {
+	o.newRunner = func(rt *runtime.EffectiveRuntime, tr tracker.Client, ws *workspace.Manager, prov provider.Provider) attemptRunner {
 		return &agent.Worker{
 			Tracker:   tr,
 			Workspace: ws,
-			Codex:     codexSrv,
+			Provider:  prov,
 			Renderer:  rt.Renderer,
 			Config:    rt.Config,
 		}
@@ -148,7 +148,8 @@ func (o *Orchestrator) Run(ctx context.Context, portOverride *int) error {
 }
 
 type persistedState struct {
-	CodexTotals CodexTotals    `json:"codex_totals"`
+	AgentTotals *AgentTotals   `json:"agent_totals,omitempty"`
+	CodexTotals *AgentTotals   `json:"codex_totals,omitempty"` // legacy
 	RateLimits  map[string]any `json:"rate_limits,omitempty"`
 	UpdatedAt   time.Time      `json:"updated_at"`
 }
@@ -184,9 +185,9 @@ func (o *Orchestrator) loadPersistedLocked() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 		if totals, rl, attempts, err := o.stats.Load(ctx, 200); err == nil {
-			o.codexTotals = totals
+			o.agentTotals = totals
 			if rl != nil {
-				o.codexRateLimits = rl
+				o.agentRateLimits = rl
 			}
 			if attempts != nil {
 				o.completedHistory = attempts
@@ -202,9 +203,13 @@ func (o *Orchestrator) loadPersistedLocked() {
 		if err == nil && len(bytesTrimSpace(b)) > 0 {
 			var st persistedState
 			if json.Unmarshal(b, &st) == nil {
-				o.codexTotals = st.CodexTotals
+				if st.AgentTotals != nil {
+					o.agentTotals = *st.AgentTotals
+				} else if st.CodexTotals != nil {
+					o.agentTotals = *st.CodexTotals
+				}
 				if st.RateLimits != nil {
-					o.codexRateLimits = st.RateLimits
+					o.agentRateLimits = st.RateLimits
 				}
 			}
 		}
@@ -257,7 +262,7 @@ func bytesTrimSpace(b []byte) []byte {
 	return b[i : j+1]
 }
 
-func (o *Orchestrator) persistStateBestEffort(totals CodexTotals, rateLimits map[string]any) {
+func (o *Orchestrator) persistStateBestEffort(totals AgentTotals, rateLimits map[string]any) {
 	o.mu.Lock()
 	path := o.statePathLocked("totals.json")
 	o.mu.Unlock()
@@ -266,8 +271,9 @@ func (o *Orchestrator) persistStateBestEffort(totals CodexTotals, rateLimits map
 	}
 	_ = os.MkdirAll(filepath.Dir(path), 0o755)
 	tmp := path + ".tmp"
+	t := totals
 	st := persistedState{
-		CodexTotals: totals,
+		AgentTotals: &t,
 		RateLimits:  rateLimits,
 		UpdatedAt:   time.Now().UTC(),
 	}
@@ -301,7 +307,7 @@ func (o *Orchestrator) appendAttemptBestEffort(entry CompletedEntry) {
 	_, _ = f.Write(append(b, '\n'))
 }
 
-func (o *Orchestrator) recordAttemptBestEffort(totals CodexTotals, rateLimits map[string]any, entry CompletedEntry) {
+func (o *Orchestrator) recordAttemptBestEffort(totals AgentTotals, rateLimits map[string]any, entry CompletedEntry) {
 	if o == nil {
 		return
 	}
@@ -365,17 +371,11 @@ func (o *Orchestrator) applyRuntimeLocked(portOverride *int) error {
 	}
 	o.tracker = tr
 
-	o.codex = codex.NewAppServer(codex.AppServerOptions{
-		Command:        o.cfg.Codex.Command,
-		ApprovalPolicy: o.cfg.Codex.ApprovalPolicy,
-		ThreadSandbox:  o.cfg.Codex.ThreadSandbox,
-		SandboxPolicy:  o.cfg.Codex.TurnSandboxPolicy,
-		ReadTimeout:    o.cfg.Codex.ReadTimeout,
-		TurnTimeout:    o.cfg.Codex.TurnTimeout,
-		LinearEndpoint: linear.StringParam(o.cfg.Tracker.Params, "endpoint", ""),
-		LinearAPIKey:   linear.StringParam(o.cfg.Tracker.Params, "api_key", ""),
-		LinearTimeout:  o.cfg.Tracker.Timeout,
-	})
+	prov, err := provider.Build(o.cfg)
+	if err != nil {
+		return err
+	}
+	o.provider = prov
 
 	port := o.cfg.Server.Port
 	if portOverride != nil {
@@ -539,8 +539,8 @@ func (o *Orchestrator) dispatchPreflightOK() bool {
 		log.Printf("symphony dispatch_validation status=failed error=no tracker configured")
 		return false
 	}
-	if strings.TrimSpace(o.cfg.Codex.Command) == "" {
-		log.Printf("symphony dispatch_validation status=failed error=missing codex command")
+	if o.provider == nil {
+		log.Printf("symphony dispatch_validation status=failed error=missing provider")
 		return false
 	}
 	return true
@@ -552,7 +552,7 @@ func (o *Orchestrator) reconcile(ctx context.Context) {
 	for _, r := range o.running {
 		running = append(running, r)
 	}
-	stallTimeout := o.cfg.Codex.StallTimeout
+	stallTimeout := o.cfg.Agent.StallTimeout
 	tr := o.tracker
 	activeStates := append([]string(nil), o.cfg.Tracker.ActiveStates...)
 	terminalStates := append([]string(nil), o.cfg.Tracker.TerminalStates...)
@@ -563,8 +563,8 @@ func (o *Orchestrator) reconcile(ctx context.Context) {
 		now := time.Now().UTC()
 		for _, r := range running {
 			last := r.StartedAt
-			if r.Live.LastCodexTimestamp != nil {
-				last = *r.Live.LastCodexTimestamp
+			if r.Live.LastAgentTimestamp != nil {
+				last = *r.Live.LastAgentTimestamp
 			}
 			if now.Sub(last) > stallTimeout {
 				log.Printf("symphony stall_detected issue_id=%s identifier=%s", r.IssueID, r.Identifier)
@@ -625,7 +625,7 @@ func (o *Orchestrator) dispatchFromCandidates(ctx context.Context, candidates []
 	rt, _ := o.runtime.Get()
 	tr := o.tracker
 	ws := o.workspace
-	codexSrv := o.codex
+	prov := o.provider
 	newRunner := o.newRunner
 	runningCount := len(o.running)
 	stateCounts := map[string]int{}
@@ -667,7 +667,7 @@ func (o *Orchestrator) dispatchFromCandidates(ctx context.Context, candidates []
 		stateCounts[stateKey]++
 		available--
 
-		runner := newRunner(rt, tr, ws, codexSrv)
+		runner := newRunner(rt, tr, ws, prov)
 		go o.runWorker(ctx, runner, issueCopy, nil)
 	}
 }
@@ -720,9 +720,9 @@ func (o *Orchestrator) runWorker(parent context.Context, w attemptRunner, issue 
 		threadID,
 		turnID,
 		res.TurnsRun,
-		res.CodexInputTokens,
-		res.CodexOutputTokens,
-		res.CodexTotalTokens,
+		res.InputTokens,
+		res.OutputTokens,
+		res.TotalTokens,
 	)
 
 	o.onWorkerExit(parent, entry, res, err)
@@ -736,10 +736,10 @@ func (o *Orchestrator) onWorkerUpdate(issueID string, upd agent.Update) {
 	if r == nil {
 		return
 	}
-	r.Live.LastCodexTimestamp = &now
+	r.Live.LastAgentTimestamp = &now
 	if upd.Event != "" {
 		ev := upd.Event
-		r.Live.LastCodexEvent = &ev
+		r.Live.LastAgentEvent = &ev
 	}
 
 	extractMessage := func(payload map[string]any) string {
@@ -813,35 +813,40 @@ func (o *Orchestrator) onWorkerUpdate(issueID string, upd agent.Update) {
 	if wsPath, ok := upd.Payload["workspace_path"].(string); ok && strings.TrimSpace(wsPath) != "" {
 		r.WorkspacePath = wsPath
 	}
+	if sessionID, ok := upd.Payload["session_id"].(string); ok && strings.TrimSpace(sessionID) != "" {
+		r.Live.SessionID = strings.TrimSpace(sessionID)
+	}
 	if threadID, ok := upd.Payload["thread_id"].(string); ok && strings.TrimSpace(threadID) != "" {
-		r.Live.ThreadID = threadID
+		r.Live.ThreadID = strings.TrimSpace(threadID)
 	}
 	if turnID, ok := upd.Payload["turn_id"].(string); ok && strings.TrimSpace(turnID) != "" {
-		r.Live.TurnID = turnID
+		r.Live.TurnID = strings.TrimSpace(turnID)
 	}
-	if strings.TrimSpace(r.Live.ThreadID) != "" && strings.TrimSpace(r.Live.TurnID) != "" {
+	if strings.TrimSpace(r.Live.SessionID) == "" && strings.TrimSpace(r.Live.ThreadID) != "" && strings.TrimSpace(r.Live.TurnID) != "" {
 		r.Live.SessionID = strings.TrimSpace(r.Live.ThreadID) + "-" + strings.TrimSpace(r.Live.TurnID)
 	}
-	if pid := intPtrFromAny(upd.Payload["codex_app_server_pid"]); pid != nil {
-		r.Live.CodexAppServerPID = pid
+	if pid := intPtrFromAny(upd.Payload["agent_pid"]); pid != nil {
+		r.Live.AgentPID = pid
+	} else if pid := intPtrFromAny(upd.Payload["codex_app_server_pid"]); pid != nil { // legacy
+		r.Live.AgentPID = pid
 	}
 	if turnCount, ok := intFromAny(upd.Payload["turn_count"]); ok && turnCount > 0 {
 		r.Live.TurnCount = turnCount
 	}
 	if m := strings.TrimSpace(extractMessage(upd.Payload)); m != "" {
-		r.Live.LastCodexMessage = &m
+		r.Live.LastAgentMessage = &m
 	}
 
 	// Token update emitted by worker after each turn.
 	if upd.Event == "symphony/token_update" {
 		if v, ok := intFromAny(upd.Payload["input_tokens"]); ok {
-			r.Live.CodexInputTokens = v
+			r.Live.InputTokens = v
 		}
 		if v, ok := intFromAny(upd.Payload["output_tokens"]); ok {
-			r.Live.CodexOutputTokens = v
+			r.Live.OutputTokens = v
 		}
 		if v, ok := intFromAny(upd.Payload["total_tokens"]); ok {
-			r.Live.CodexTotalTokens = v
+			r.Live.TotalTokens = v
 		}
 	}
 
@@ -858,36 +863,36 @@ func (o *Orchestrator) onWorkerUpdate(issueID string, upd agent.Update) {
 			usage = nested
 		}
 		if v, ok := intFromAny(usage["input_tokens"]); ok {
-			r.Live.CodexInputTokens = v
+			r.Live.InputTokens = v
 		}
 		if v, ok := intFromAny(usage["inputTokens"]); ok {
-			r.Live.CodexInputTokens = v
+			r.Live.InputTokens = v
 		}
 		if v, ok := intFromAny(usage["prompt_tokens"]); ok {
-			r.Live.CodexInputTokens = v
+			r.Live.InputTokens = v
 		}
 		if v, ok := intFromAny(usage["promptTokens"]); ok {
-			r.Live.CodexInputTokens = v
+			r.Live.InputTokens = v
 		}
 
 		if v, ok := intFromAny(usage["output_tokens"]); ok {
-			r.Live.CodexOutputTokens = v
+			r.Live.OutputTokens = v
 		}
 		if v, ok := intFromAny(usage["outputTokens"]); ok {
-			r.Live.CodexOutputTokens = v
+			r.Live.OutputTokens = v
 		}
 		if v, ok := intFromAny(usage["completion_tokens"]); ok {
-			r.Live.CodexOutputTokens = v
+			r.Live.OutputTokens = v
 		}
 		if v, ok := intFromAny(usage["completionTokens"]); ok {
-			r.Live.CodexOutputTokens = v
+			r.Live.OutputTokens = v
 		}
 
 		if v, ok := intFromAny(usage["total_tokens"]); ok {
-			r.Live.CodexTotalTokens = v
+			r.Live.TotalTokens = v
 		}
 		if v, ok := intFromAny(usage["totalTokens"]); ok {
-			r.Live.CodexTotalTokens = v
+			r.Live.TotalTokens = v
 		}
 	}
 
@@ -977,10 +982,7 @@ func (o *Orchestrator) onWorkerExit(ctx context.Context, entry *RunningEntry, re
 		} else if entry.Phase == PhaseStalled {
 			status = string(PhaseStalled)
 		} else {
-			var ce *codex.Error
-			if errors.As(err, &ce) && ce != nil && ce.Category == codex.ErrTurnTimeout.Error() {
-				status = string(PhaseTimedOut)
-			} else if errors.Is(err, context.DeadlineExceeded) {
+			if provider.IsTimeout(err) || errors.Is(err, context.DeadlineExceeded) {
 				status = string(PhaseTimedOut)
 			}
 		}
@@ -1011,27 +1013,27 @@ func (o *Orchestrator) onWorkerExit(ctx context.Context, entry *RunningEntry, re
 	}
 
 	completed := CompletedEntry{
-		Issue:             finalIssue,
-		IssueID:           entry.IssueID,
-		IssueIdentifier:   entry.Identifier,
-		Attempt:           entry.Attempt,
-		WorkspacePath:     strings.TrimSpace(entry.WorkspacePath),
-		StartedAt:         entry.StartedAt,
-		EndedAt:           endedAt,
-		DurationSecs:      duration,
-		Status:            status,
-		Error:             errMsg,
-		CodexInputTokens:  res.CodexInputTokens,
-		CodexOutputTokens: res.CodexOutputTokens,
-		CodexTotalTokens:  res.CodexTotalTokens,
-		TurnsRun:          res.TurnsRun,
-		ThreadID:          threadID,
-		TurnID:            turnID,
-		LastCodexEvent:    entry.Live.LastCodexEvent,
-		LastCodexMessage:  entry.Live.LastCodexMessage,
+		Issue:            finalIssue,
+		IssueID:          entry.IssueID,
+		IssueIdentifier:  entry.Identifier,
+		Attempt:          entry.Attempt,
+		WorkspacePath:    strings.TrimSpace(entry.WorkspacePath),
+		StartedAt:        entry.StartedAt,
+		EndedAt:          endedAt,
+		DurationSecs:     duration,
+		Status:           status,
+		Error:            errMsg,
+		InputTokens:      res.InputTokens,
+		OutputTokens:     res.OutputTokens,
+		TotalTokens:      res.TotalTokens,
+		TurnsRun:         res.TurnsRun,
+		ThreadID:         threadID,
+		TurnID:           turnID,
+		LastAgentEvent:   entry.Live.LastAgentEvent,
+		LastAgentMessage: entry.Live.LastAgentMessage,
 	}
 
-	persistBestEffort := func(totals CodexTotals, rateLimits map[string]any, c CompletedEntry) {
+	persistBestEffort := func(totals AgentTotals, rateLimits map[string]any, c CompletedEntry) {
 		go func() {
 			o.recordAttemptBestEffort(totals, rateLimits, c)
 		}()
@@ -1043,8 +1045,8 @@ func (o *Orchestrator) onWorkerExit(ctx context.Context, entry *RunningEntry, re
 		if len(o.completedHistory) > 200 {
 			o.completedHistory = o.completedHistory[len(o.completedHistory)-200:]
 		}
-		totals := o.codexTotals
-		rateLimits := o.codexRateLimits
+		totals := o.agentTotals
+		rateLimits := o.agentRateLimits
 		o.mu.Unlock()
 		persistBestEffort(totals, rateLimits, completed)
 
@@ -1062,14 +1064,14 @@ func (o *Orchestrator) onWorkerExit(ctx context.Context, entry *RunningEntry, re
 		if len(o.completedHistory) > 200 {
 			o.completedHistory = o.completedHistory[len(o.completedHistory)-200:]
 		}
-		o.codexTotals.InputTokens += res.CodexInputTokens
-		o.codexTotals.OutputTokens += res.CodexOutputTokens
-		o.codexTotals.TotalTokens += res.CodexTotalTokens
-		if res.CodexRateLimits != nil {
-			o.codexRateLimits = res.CodexRateLimits
+		o.agentTotals.InputTokens += res.InputTokens
+		o.agentTotals.OutputTokens += res.OutputTokens
+		o.agentTotals.TotalTokens += res.TotalTokens
+		if res.RateLimits != nil {
+			o.agentRateLimits = res.RateLimits
 		}
-		totals := o.codexTotals
-		rateLimits := o.codexRateLimits
+		totals := o.agentTotals
+		rateLimits := o.agentRateLimits
 		o.mu.Unlock()
 
 		persistBestEffort(totals, rateLimits, completed)
@@ -1089,14 +1091,14 @@ func (o *Orchestrator) onWorkerExit(ctx context.Context, entry *RunningEntry, re
 	if len(o.completedHistory) > 200 {
 		o.completedHistory = o.completedHistory[len(o.completedHistory)-200:]
 	}
-	o.codexTotals.InputTokens += res.CodexInputTokens
-	o.codexTotals.OutputTokens += res.CodexOutputTokens
-	o.codexTotals.TotalTokens += res.CodexTotalTokens
-	if res.CodexRateLimits != nil {
-		o.codexRateLimits = res.CodexRateLimits
+	o.agentTotals.InputTokens += res.InputTokens
+	o.agentTotals.OutputTokens += res.OutputTokens
+	o.agentTotals.TotalTokens += res.TotalTokens
+	if res.RateLimits != nil {
+		o.agentRateLimits = res.RateLimits
 	}
-	totals := o.codexTotals
-	rateLimits := o.codexRateLimits
+	totals := o.agentTotals
+	rateLimits := o.agentRateLimits
 	o.mu.Unlock()
 
 	persistBestEffort(totals, rateLimits, completed)
@@ -1216,7 +1218,7 @@ func (o *Orchestrator) onRetryTimer(ctx context.Context, issueID string) {
 	}
 	rt, _ := o.runtime.Get()
 	ws := o.workspace
-	codexSrv := o.codex
+	prov := o.provider
 	newRunner := o.newRunner
 	o.mu.Unlock()
 
@@ -1242,7 +1244,7 @@ func (o *Orchestrator) onRetryTimer(ctx context.Context, issueID string) {
 	}
 
 	att := retryEntry.Attempt
-	runner := newRunner(rt, tr, ws, codexSrv)
+	runner := newRunner(rt, tr, ws, prov)
 	go o.runWorker(ctx, runner, *found, &att)
 }
 
@@ -1262,8 +1264,8 @@ func (o *Orchestrator) snapshot() map[string]any {
 		"running":      running,
 		"retrying":     retrying,
 		"completed":    completed,
-		"codex_totals": o.codexTotals,
-		"rate_limits":  o.codexRateLimits,
+		"agent_totals": o.agentTotals,
+		"rate_limits":  o.agentRateLimits,
 	}
 }
 

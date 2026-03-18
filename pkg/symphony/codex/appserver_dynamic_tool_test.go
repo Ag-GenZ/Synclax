@@ -88,7 +88,7 @@ exit 0
 		ApprovalPolicy: "never",
 		ThreadSandbox:  "workspace-write",
 		SandboxPolicy:  map[string]any{"type": "workspaceWrite"},
-		ReadTimeout:    2 * time.Second,
+		ReadTimeout:    5 * time.Second,
 		TurnTimeout:    5 * time.Second,
 		LinearEndpoint: linearSrv.URL,
 		LinearAPIKey:   "x",

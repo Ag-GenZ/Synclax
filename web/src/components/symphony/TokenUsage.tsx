@@ -1,11 +1,11 @@
 import { memo } from "react";
-import type { CodexTotals } from "#/api-gen/types.gen";
+import type { AgentTotals } from "#/api-gen/types.gen";
 import { Meter, MeterTrack, MeterIndicator, MeterLabel, MeterValue } from "#/components/ui/meter";
 import { Progress, ProgressTrack, ProgressIndicator } from "#/components/ui/progress";
 import { cn } from "#/lib/utils";
 import { fmtTokens, fmtSeconds } from "./utils";
 
-export const TokenUsage = memo(function TokenUsage({ totals }: { totals: CodexTotals }) {
+export const TokenUsage = memo(function TokenUsage({ totals }: { totals: AgentTotals }) {
   const inputPct =
     totals.total_tokens > 0 ? (totals.input_tokens / totals.total_tokens) * 100 : 50;
   const outputPct = 100 - inputPct;

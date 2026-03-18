@@ -57,7 +57,7 @@ export const AgentCard = memo(function AgentCard({ entry }: { entry: SymphonyRun
   const { issue, live, phase, started_at, workspace_path, attempt } = entry;
 
   const blocks = buildStreamBlocks(live.event_log ?? []);
-  const hasLiveEvent = blocks.length > 0 || live.last_codex_message || live.last_codex_event;
+  const hasLiveEvent = blocks.length > 0 || live.last_agent_message || live.last_agent_event;
 
   const phaseIdx = PHASES.indexOf(phase as Phase);
   const phaseProgress = phaseIdx >= 0 ? ((phaseIdx + 1) / PHASES.length) * 100 : 0;
@@ -66,7 +66,7 @@ export const AgentCard = memo(function AgentCard({ entry }: { entry: SymphonyRun
     if (streamRef.current) {
       streamRef.current.scrollTop = streamRef.current.scrollHeight;
     }
-  }, [blocks.at(-1)?.text, live.last_codex_message]);
+  }, [blocks.at(-1)?.text, live.last_agent_message]);
 
   const stateVariant =
     issue.state === "In Progress"
@@ -181,11 +181,11 @@ export const AgentCard = memo(function AgentCard({ entry }: { entry: SymphonyRun
           </span>
           <span className="text-border/60">·</span>
           <span className="tabular-nums text-info-foreground font-medium">
-            {fmtTokens(live.codex_input_tokens)} in
+            {fmtTokens(live.input_tokens)} in
           </span>
           <span className="text-border/60">·</span>
           <span className="tabular-nums text-success-foreground font-medium">
-            {fmtTokens(live.codex_output_tokens)} out
+            {fmtTokens(live.output_tokens)} out
           </span>
           <span className="text-border/60">·</span>
           <span className="flex items-center gap-1 text-muted-foreground/70">
@@ -206,11 +206,11 @@ export const AgentCard = memo(function AgentCard({ entry }: { entry: SymphonyRun
                 <div className="size-2 rounded-full bg-success/40" />
               </div>
               <span className="font-mono text-[10px] text-muted-foreground/50 ml-1 flex-1 truncate">
-                {simplifyEvent(blocks.at(-1)?.event ?? live.last_codex_event ?? "event")}
+                {simplifyEvent(blocks.at(-1)?.event ?? live.last_agent_event ?? "event")}
               </span>
-              {live.last_codex_timestamp && (
+              {live.last_agent_timestamp && (
                 <span className="font-mono text-[10px] text-muted-foreground/40 tabular-nums shrink-0">
-                  {fmtAgo(live.last_codex_timestamp)}
+                  {fmtAgo(live.last_agent_timestamp)}
                 </span>
               )}
             </div>
@@ -233,9 +233,9 @@ export const AgentCard = memo(function AgentCard({ entry }: { entry: SymphonyRun
                     </p>
                   );
                 })
-              ) : live.last_codex_message ? (
+              ) : live.last_agent_message ? (
                 <p className="font-mono text-[11px] leading-relaxed text-foreground/90">
-                  {live.last_codex_message}
+                  {live.last_agent_message}
                 </p>
               ) : (
                 <p className="font-mono text-[11px] text-muted-foreground/40">—</p>

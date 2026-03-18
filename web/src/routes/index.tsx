@@ -171,13 +171,13 @@ function Dashboard() {
   // Track token history for chart
   useEffect(() => {
     if (!snapshot) return;
-    const total = snapshot.codex_totals.total_tokens;
+    const total = snapshot.agent_totals.total_tokens;
     setTokenHistory((prev) => {
       const now = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
       const next = [...prev, { time: now, tokens: total }];
       return next.slice(-30); // keep last 30 data points
     });
-  }, [snapshot?.codex_totals.total_tokens]);
+  }, [snapshot?.agent_totals.total_tokens]);
 
   const { mutate: doStart, isPending: isStarting } = useMutation({
     ...startSymphonyMutation(),
@@ -239,10 +239,10 @@ function Dashboard() {
   const runningCount = snapshot?.running.length ?? 0;
   const retryingCount = snapshot?.retrying.length ?? 0;
   const completedCount = snapshot?.completed?.length ?? 0;
-  const totalTokens = snapshot?.codex_totals.total_tokens ?? 0;
-  const inputTokens = snapshot?.codex_totals.input_tokens ?? 0;
-  const outputTokens = snapshot?.codex_totals.output_tokens ?? 0;
-  const secondsRunning = snapshot?.codex_totals.seconds_running ?? 0;
+  const totalTokens = snapshot?.agent_totals.total_tokens ?? 0;
+  const inputTokens = snapshot?.agent_totals.input_tokens ?? 0;
+  const outputTokens = snapshot?.agent_totals.output_tokens ?? 0;
+  const secondsRunning = snapshot?.agent_totals.seconds_running ?? 0;
   const rateLimits = snapshot?.rate_limits;
   const hasRateLimits = rateLimits && Object.keys(rateLimits).length > 0;
   const isLoading = healthLoading || workflowsLoading || snapLoading;
@@ -312,7 +312,7 @@ function Dashboard() {
                 ) : workflows.length === 0 ? (
                   <p className="px-2 py-2 text-xs text-muted-foreground">None configured</p>
                 ) : (
-                  <Accordion type="single" collapsible defaultValue="wf">
+                  <Accordion defaultValue={["wf"]}>
                     <AccordionItem value="wf" className="border-0">
                       <AccordionTrigger className="text-xs py-1.5 px-2 hover:no-underline">
                         {workflows.length} workflow{workflows.length !== 1 && "s"}
@@ -479,7 +479,7 @@ function Dashboard() {
                           <RechartsTooltip
                             contentStyle={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }}
                             labelStyle={{ color: "var(--muted-foreground)" }}
-                            formatter={(v: number | string) => [fmtTokens(Number(v)), "Tokens"]}
+                            formatter={(value) => [fmtTokens(Number(value ?? 0)), "Tokens"]}
                           />
                           <Area type="monotone" dataKey="tokens" stroke="var(--info)" strokeWidth={2} fill="url(#tokenGrad)" />
                         </AreaChart>
@@ -626,7 +626,7 @@ function Dashboard() {
                 {/* Tokens */}
                 <TabsPanel value="tokens" className="mt-4">
                   <Card><CardHeader><CardTitle className="text-sm">Token Usage</CardTitle><CardDescription>Cumulative consumption across all sessions.</CardDescription></CardHeader>
-                    <CardPanel>{snapLoading ? <div className="space-y-3"><Skeleton className="h-8 w-full" /><Skeleton className="h-8 w-full" /></div> : snapshot ? <TokenUsage totals={snapshot.codex_totals} /> : <p className="text-sm text-muted-foreground">No data.</p>}</CardPanel></Card>
+                    <CardPanel>{snapLoading ? <div className="space-y-3"><Skeleton className="h-8 w-full" /><Skeleton className="h-8 w-full" /></div> : snapshot ? <TokenUsage totals={snapshot.agent_totals} /> : <p className="text-sm text-muted-foreground">No data.</p>}</CardPanel></Card>
                 </TabsPanel>
 
                 {/* Rate Limits */}

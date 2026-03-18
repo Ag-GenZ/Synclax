@@ -37,25 +37,25 @@ func TestSnapshotSecondsRunningIncreases(t *testing.T) {
 
 func snapshotSecondsRunning(t *testing.T, snap map[string]any) float64 {
 	t.Helper()
-	v, ok := snap["codex_totals"]
+	v, ok := snap["agent_totals"]
 	if !ok {
-		t.Fatalf("missing codex_totals in snapshot")
+		t.Fatalf("missing agent_totals in snapshot")
 	}
 	switch tt := v.(type) {
-	case orchestrator.CodexTotals:
+	case orchestrator.AgentTotals:
 		return tt.SecondsRunning
-	case *orchestrator.CodexTotals:
+	case *orchestrator.AgentTotals:
 		if tt == nil {
-			t.Fatalf("nil codex_totals")
+			t.Fatalf("nil agent_totals")
 		}
 		return tt.SecondsRunning
 	case map[string]any:
 		if f, ok := tt["seconds_running"].(float64); ok {
 			return f
 		}
-		t.Fatalf("unexpected codex_totals map shape: %T", tt["seconds_running"])
+		t.Fatalf("unexpected agent_totals map shape: %T", tt["seconds_running"])
 	default:
-		t.Fatalf("unexpected codex_totals type: %T", v)
+		t.Fatalf("unexpected agent_totals type: %T", v)
 	}
 	return 0
 }

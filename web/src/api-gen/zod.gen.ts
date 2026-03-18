@@ -52,13 +52,13 @@ export const zSymphonyLiveSession = z.object({
     session_id: z.string().nullish(),
     thread_id: z.string().nullish(),
     turn_id: z.string().nullish(),
-    codex_app_server_pid: z.int().min(-2147483648, { error: 'Invalid value: Expected int32 to be >= -2147483648' }).max(2147483647, { error: 'Invalid value: Expected int32 to be <= 2147483647' }).nullish(),
-    last_codex_event: z.string().nullish(),
-    last_codex_timestamp: z.iso.datetime().nullish(),
-    last_codex_message: z.string().nullish(),
-    codex_input_tokens: z.int().min(-2147483648, { error: 'Invalid value: Expected int32 to be >= -2147483648' }).max(2147483647, { error: 'Invalid value: Expected int32 to be <= 2147483647' }),
-    codex_output_tokens: z.int().min(-2147483648, { error: 'Invalid value: Expected int32 to be >= -2147483648' }).max(2147483647, { error: 'Invalid value: Expected int32 to be <= 2147483647' }),
-    codex_total_tokens: z.int().min(-2147483648, { error: 'Invalid value: Expected int32 to be >= -2147483648' }).max(2147483647, { error: 'Invalid value: Expected int32 to be <= 2147483647' }),
+    agent_pid: z.int().min(-2147483648, { error: 'Invalid value: Expected int32 to be >= -2147483648' }).max(2147483647, { error: 'Invalid value: Expected int32 to be <= 2147483647' }).nullish(),
+    last_agent_event: z.string().nullish(),
+    last_agent_timestamp: z.iso.datetime().nullish(),
+    last_agent_message: z.string().nullish(),
+    input_tokens: z.int().min(-2147483648, { error: 'Invalid value: Expected int32 to be >= -2147483648' }).max(2147483647, { error: 'Invalid value: Expected int32 to be <= 2147483647' }),
+    output_tokens: z.int().min(-2147483648, { error: 'Invalid value: Expected int32 to be >= -2147483648' }).max(2147483647, { error: 'Invalid value: Expected int32 to be <= 2147483647' }),
+    total_tokens: z.int().min(-2147483648, { error: 'Invalid value: Expected int32 to be >= -2147483648' }).max(2147483647, { error: 'Invalid value: Expected int32 to be <= 2147483647' }),
     turn_count: z.int().min(-2147483648, { error: 'Invalid value: Expected int32 to be >= -2147483648' }).max(2147483647, { error: 'Invalid value: Expected int32 to be <= 2147483647' }),
     event_log: z.array(zLiveEvent).optional()
 });
@@ -115,17 +115,17 @@ export const zSymphonyCompletedEntry = z.object({
     duration_secs: z.number(),
     status: z.string(),
     error: z.string().nullish(),
-    codex_input_tokens: z.int().min(-2147483648, { error: 'Invalid value: Expected int32 to be >= -2147483648' }).max(2147483647, { error: 'Invalid value: Expected int32 to be <= 2147483647' }),
-    codex_output_tokens: z.int().min(-2147483648, { error: 'Invalid value: Expected int32 to be >= -2147483648' }).max(2147483647, { error: 'Invalid value: Expected int32 to be <= 2147483647' }),
-    codex_total_tokens: z.int().min(-2147483648, { error: 'Invalid value: Expected int32 to be >= -2147483648' }).max(2147483647, { error: 'Invalid value: Expected int32 to be <= 2147483647' }),
+    input_tokens: z.int().min(-2147483648, { error: 'Invalid value: Expected int32 to be >= -2147483648' }).max(2147483647, { error: 'Invalid value: Expected int32 to be <= 2147483647' }),
+    output_tokens: z.int().min(-2147483648, { error: 'Invalid value: Expected int32 to be >= -2147483648' }).max(2147483647, { error: 'Invalid value: Expected int32 to be <= 2147483647' }),
+    total_tokens: z.int().min(-2147483648, { error: 'Invalid value: Expected int32 to be >= -2147483648' }).max(2147483647, { error: 'Invalid value: Expected int32 to be <= 2147483647' }),
     turns_run: z.int().min(-2147483648, { error: 'Invalid value: Expected int32 to be >= -2147483648' }).max(2147483647, { error: 'Invalid value: Expected int32 to be <= 2147483647' }),
     thread_id: z.string().nullish(),
     turn_id: z.string().nullish(),
-    last_codex_event: z.string().nullish(),
-    last_codex_message: z.string().nullish()
+    last_agent_event: z.string().nullish(),
+    last_agent_message: z.string().nullish()
 });
 
-export const zCodexTotals = z.object({
+export const zAgentTotals = z.object({
     input_tokens: z.int().min(-2147483648, { error: 'Invalid value: Expected int32 to be >= -2147483648' }).max(2147483647, { error: 'Invalid value: Expected int32 to be <= 2147483647' }),
     output_tokens: z.int().min(-2147483648, { error: 'Invalid value: Expected int32 to be >= -2147483648' }).max(2147483647, { error: 'Invalid value: Expected int32 to be <= 2147483647' }),
     total_tokens: z.int().min(-2147483648, { error: 'Invalid value: Expected int32 to be >= -2147483648' }).max(2147483647, { error: 'Invalid value: Expected int32 to be <= 2147483647' }),
@@ -136,7 +136,7 @@ export const zSymphonySnapshot = z.object({
     running: z.array(zSymphonyRunningEntry),
     retrying: z.array(zSymphonyRetryEntry),
     completed: z.array(zSymphonyCompletedEntry).optional(),
-    codex_totals: zCodexTotals,
+    agent_totals: zAgentTotals,
     rate_limits: z.record(z.string(), z.unknown()).optional()
 });
 

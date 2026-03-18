@@ -781,7 +781,9 @@ type process struct {
 }
 
 func startProcess(ctx context.Context, command, cwd string) (*process, error) {
-	cmd := exec.CommandContext(ctx, "bash", "-lc", command)
+	// Avoid `bash -l` (login shell) because it may source user profiles that write
+	// to stdout and corrupt the JSON-RPC line protocol.
+	cmd := exec.CommandContext(ctx, "bash", "-c", command)
 	cmd.Dir = cwd
 	stdin, err := cmd.StdinPipe()
 	if err != nil {

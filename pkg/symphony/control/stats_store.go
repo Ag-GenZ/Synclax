@@ -29,9 +29,9 @@ func NewDBStatsStore(m model.ModelInterface, workflowID string) orchestrator.Sta
 	return &dbStatsStore{model: m, workflowID: workflowID}
 }
 
-func (s *dbStatsStore) Load(ctx context.Context, maxAttempts int) (orchestrator.CodexTotals, map[string]any, []orchestrator.CompletedEntry, error) {
+func (s *dbStatsStore) Load(ctx context.Context, maxAttempts int) (orchestrator.AgentTotals, map[string]any, []orchestrator.CompletedEntry, error) {
 	if s == nil || s.model == nil {
-		return orchestrator.CodexTotals{}, nil, nil, errors.New("nil stats store")
+		return orchestrator.AgentTotals{}, nil, nil, errors.New("nil stats store")
 	}
 	if ctx == nil {
 		ctx = context.Background()
@@ -40,12 +40,12 @@ func (s *dbStatsStore) Load(ctx context.Context, maxAttempts int) (orchestrator.
 	st, err := s.model.GetSymphonyState(ctx, s.workflowID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return orchestrator.CodexTotals{}, map[string]any{}, []orchestrator.CompletedEntry{}, nil
+			return orchestrator.AgentTotals{}, map[string]any{}, []orchestrator.CompletedEntry{}, nil
 		}
-		return orchestrator.CodexTotals{}, nil, nil, err
+		return orchestrator.AgentTotals{}, nil, nil, err
 	}
 
-	totals := orchestrator.CodexTotals{
+	totals := orchestrator.AgentTotals{
 		InputTokens:    int(st.CodexInputTokens),
 		OutputTokens:   int(st.CodexOutputTokens),
 		TotalTokens:    int(st.CodexTotalTokens),
@@ -85,7 +85,7 @@ func (s *dbStatsStore) Load(ctx context.Context, maxAttempts int) (orchestrator.
 	return totals, rateLimits, entries, nil
 }
 
-func (s *dbStatsStore) Record(ctx context.Context, totals orchestrator.CodexTotals, rateLimits map[string]any, entry orchestrator.CompletedEntry) error {
+func (s *dbStatsStore) Record(ctx context.Context, totals orchestrator.AgentTotals, rateLimits map[string]any, entry orchestrator.CompletedEntry) error {
 	if s == nil || s.model == nil {
 		return errors.New("nil stats store")
 	}

@@ -10,7 +10,7 @@ export type DebugState = {
     running: Array<Record<string, unknown>>;
     retrying: Array<Record<string, unknown>>;
     completed?: Array<Record<string, unknown>>;
-    codex_totals: {
+    agent_totals: {
       input_tokens: number;
       output_tokens: number;
       total_tokens: number;
