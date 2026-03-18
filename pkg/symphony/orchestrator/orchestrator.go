@@ -93,8 +93,8 @@ func New(opts Options) (*Orchestrator, error) {
 		running:   map[string]*RunningEntry{},
 		claimed:   map[string]struct{}{},
 		retries:   map[string]*RetryEntry{},
-	completed: map[string]struct{}{},
-	stats:     opts.StatsStore,
+		completed: map[string]struct{}{},
+		stats:     opts.StatsStore,
 	}
 	o.newRunner = func(rt *runtime.EffectiveRuntime, tr tracker.Client, ws *workspace.Manager, prov provider.Provider) attemptRunner {
 		return &agent.Worker{
@@ -327,6 +327,15 @@ func (o *Orchestrator) getPollInterval() time.Duration {
 	return o.cfg.Polling.Interval
 }
 
+func newTracker(cfg symphonycfg.TrackerConfig) (tracker.Client, error) {
+	switch cfg.Kind {
+	case "linear":
+		return linear.NewFromConfig(cfg)
+	default:
+		return nil, fmt.Errorf("unsupported tracker kind: %q", cfg.Kind)
+	}
+}
+
 func (o *Orchestrator) applyRuntimeLocked(portOverride *int) error {
 	rt, rev := o.runtime.Get()
 	if rt == nil {
@@ -356,14 +365,7 @@ func (o *Orchestrator) applyRuntimeLocked(portOverride *int) error {
 	o.workspace = ws
 	o.ensureStateDirLocked()
 
-	tr, err := linear.New(linear.Options{
-		Endpoint:     o.cfg.Tracker.Endpoint,
-		APIKey:       o.cfg.Tracker.APIKey,
-		ProjectSlug:  o.cfg.Tracker.ProjectSlug,
-		ActiveStates: o.cfg.Tracker.ActiveStates,
-		PageSize:     o.cfg.Tracker.PageSize,
-		Timeout:      o.cfg.Tracker.Timeout,
-	})
+	tr, err := newTracker(o.cfg.Tracker)
 	if err != nil {
 		return err
 	}
@@ -533,8 +535,8 @@ func (o *Orchestrator) tick(ctx context.Context) {
 func (o *Orchestrator) dispatchPreflightOK() bool {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	if strings.TrimSpace(o.cfg.Tracker.APIKey) == "" || strings.TrimSpace(o.cfg.Tracker.ProjectSlug) == "" {
-		log.Printf("symphony dispatch_validation status=failed error=missing tracker config")
+	if o.tracker == nil {
+		log.Printf("symphony dispatch_validation status=failed error=no tracker configured")
 		return false
 	}
 	if o.provider == nil {
@@ -1011,24 +1013,24 @@ func (o *Orchestrator) onWorkerExit(ctx context.Context, entry *RunningEntry, re
 	}
 
 	completed := CompletedEntry{
-		Issue:             finalIssue,
-		IssueID:           entry.IssueID,
-		IssueIdentifier:   entry.Identifier,
-		Attempt:           entry.Attempt,
-		WorkspacePath:     strings.TrimSpace(entry.WorkspacePath),
-		StartedAt:         entry.StartedAt,
-		EndedAt:           endedAt,
-		DurationSecs:      duration,
-		Status:            status,
-		Error:             errMsg,
-		InputTokens:       res.InputTokens,
-		OutputTokens:      res.OutputTokens,
-		TotalTokens:       res.TotalTokens,
-		TurnsRun:          res.TurnsRun,
-		ThreadID:          threadID,
-		TurnID:            turnID,
-		LastAgentEvent:    entry.Live.LastAgentEvent,
-		LastAgentMessage:  entry.Live.LastAgentMessage,
+		Issue:            finalIssue,
+		IssueID:          entry.IssueID,
+		IssueIdentifier:  entry.Identifier,
+		Attempt:          entry.Attempt,
+		WorkspacePath:    strings.TrimSpace(entry.WorkspacePath),
+		StartedAt:        entry.StartedAt,
+		EndedAt:          endedAt,
+		DurationSecs:     duration,
+		Status:           status,
+		Error:            errMsg,
+		InputTokens:      res.InputTokens,
+		OutputTokens:     res.OutputTokens,
+		TotalTokens:      res.TotalTokens,
+		TurnsRun:         res.TurnsRun,
+		ThreadID:         threadID,
+		TurnID:           turnID,
+		LastAgentEvent:   entry.Live.LastAgentEvent,
+		LastAgentMessage: entry.Live.LastAgentMessage,
 	}
 
 	persistBestEffort := func(totals AgentTotals, rateLimits map[string]any, c CompletedEntry) {

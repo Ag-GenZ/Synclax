@@ -6,6 +6,7 @@ import {
   RefreshCwIcon,
   ServerIcon,
   TerminalIcon,
+  InfoIcon,
 } from "lucide-react";
 import { useDebugState, useDebugHealthz, useDebugRefresh } from "#/hooks/use-debug-server";
 import { Card, CardHeader, CardTitle, CardDescription, CardPanel } from "#/components/ui/card";
@@ -16,7 +17,10 @@ import { Skeleton } from "#/components/ui/skeleton";
 import { Alert, AlertTitle, AlertDescription } from "#/components/ui/alert";
 import { Collapsible, CollapsibleTrigger, CollapsiblePanel } from "#/components/ui/collapsible";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "#/components/ui/tooltip";
+import { Popover, PopoverTrigger, PopoverPopup, PopoverTitle, PopoverDescription } from "#/components/ui/popover";
+import { Frame, FramePanel, FrameTitle, FrameDescription } from "#/components/ui/frame";
 import { Spinner } from "#/components/ui/spinner";
+import { Meter, MeterTrack, MeterIndicator, MeterLabel, MeterValue } from "#/components/ui/meter";
 import { toastManager } from "#/components/ui/toast";
 import { cn } from "#/lib/utils";
 
@@ -49,17 +53,19 @@ export const DebugPanel = memo(function DebugPanel({
 
   if (port == null || port <= 0) {
     return (
-      <div className="rounded-xl border border-dashed p-10 text-center">
-        <div className="mx-auto mb-3 flex size-10 items-center justify-center rounded-full bg-muted">
-          <ServerIcon className="size-5 text-muted-foreground" />
-        </div>
-        <p className="text-sm font-medium mb-1">Debug server not configured</p>
-        <p className="text-xs text-muted-foreground max-w-sm mx-auto leading-relaxed">
-          Set <code className="rounded bg-muted px-1 font-mono text-xs">server.port</code> in your{" "}
-          <code className="rounded bg-muted px-1 font-mono text-xs">WORKFLOW.md</code> front matter,
-          or pass a debug HTTP port when starting Symphony.
-        </p>
-      </div>
+      <Frame className="border-dashed">
+        <FramePanel className="p-10 text-center">
+          <div className="mx-auto mb-3 flex size-10 items-center justify-center rounded-full bg-muted">
+            <ServerIcon className="size-5 text-muted-foreground" />
+          </div>
+          <FrameTitle className="text-sm font-medium mb-1">Debug server not configured</FrameTitle>
+          <FrameDescription className="text-xs text-muted-foreground max-w-sm mx-auto leading-relaxed">
+            Set <code className="rounded bg-muted px-1 font-mono text-xs">server.port</code> in your{" "}
+            <code className="rounded bg-muted px-1 font-mono text-xs">WORKFLOW.md</code> front matter,
+            or pass a debug HTTP port when starting Symphony.
+          </FrameDescription>
+        </FramePanel>
+      </Frame>
     );
   }
 
@@ -90,6 +96,24 @@ export const DebugPanel = memo(function DebugPanel({
           <span className="font-mono text-xs text-muted-foreground">
             127.0.0.1:{port}
           </span>
+
+          <Popover>
+            <PopoverTrigger
+              render={
+                <button className="rounded-md p-1 text-muted-foreground/40 hover:text-muted-foreground transition-colors">
+                  <InfoIcon className="size-3.5" />
+                </button>
+              }
+            />
+            <PopoverPopup sideOffset={8}>
+              <PopoverTitle>Debug Server</PopoverTitle>
+              <PopoverDescription>
+                The debug HTTP server runs alongside Symphony and exposes internal state for
+                development. It provides real-time snapshots of running agents, retry queues,
+                and token consumption metrics.
+              </PopoverDescription>
+            </PopoverPopup>
+          </Popover>
         </div>
         <Tooltip>
           <TooltipTrigger>
@@ -162,7 +186,7 @@ export const DebugPanel = memo(function DebugPanel({
             </CardPanel>
           </Card>
 
-          {/* Quick stats from debug snapshot */}
+          {/* Quick stats with meters */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
@@ -170,10 +194,10 @@ export const DebugPanel = memo(function DebugPanel({
                 Debug Snapshot
               </CardTitle>
               <CardDescription>
-                Live data from the debug HTTP server (separate from main API).
+                Live data from the debug HTTP server.
               </CardDescription>
             </CardHeader>
-            <CardPanel>
+            <CardPanel className="space-y-3">
               <div className="grid grid-cols-2 gap-2">
                 <StatBlock
                   label="Running"
@@ -194,6 +218,25 @@ export const DebugPanel = memo(function DebugPanel({
                   value={state.snapshot.agent_totals.total_tokens.toLocaleString()}
                 />
               </div>
+
+              {/* Capacity meter */}
+              {state.snapshot.running.length > 0 && (
+                <Meter
+                  value={state.snapshot.running.length}
+                  min={0}
+                  max={Math.max(state.snapshot.running.length + 2, 5)}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <MeterLabel className="text-[10px] text-muted-foreground">Agent Capacity</MeterLabel>
+                    <MeterValue className="text-[10px] font-mono tabular-nums">
+                      {() => `${state.snapshot.running.length} active`}
+                    </MeterValue>
+                  </div>
+                  <MeterTrack className="h-1.5 rounded-full">
+                    <MeterIndicator className="bg-success/60 rounded-full" />
+                  </MeterTrack>
+                </Meter>
+              )}
             </CardPanel>
           </Card>
         </div>

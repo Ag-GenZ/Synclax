@@ -13,7 +13,7 @@ export const RetryRow = memo(function RetryRow({ entry }: { entry: SymphonyRetry
 
       {/* Content */}
       <div className="flex items-center gap-2 flex-1 min-w-0 overflow-hidden">
-        <span className="font-mono text-[11px] font-bold text-[var(--lagoon-deep)] shrink-0">
+        <span className="font-mono text-[11px] font-bold text-info-foreground shrink-0">
           {entry.identifier}
         </span>
         <Badge variant="outline" size="sm">

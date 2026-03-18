@@ -7,9 +7,11 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
+	"github.com/wibus-wee/synclax/pkg/symphony/config"
 	"github.com/wibus-wee/synclax/pkg/symphony/domain"
 	"github.com/wibus-wee/synclax/pkg/symphony/tracker"
 )
@@ -69,6 +71,51 @@ func New(opts Options) (*Client, error) {
 		timeout:      opts.Timeout,
 		httpClient:   hc,
 	}, nil
+}
+
+// NewFromConfig creates a Linear Client from a generic TrackerConfig.
+// It reads Linear-specific parameters from cfg.Params:
+//   - endpoint (string, default: "https://api.linear.app/graphql")
+//   - api_key (string, required)
+//   - project_slug (string, required)
+func NewFromConfig(cfg config.TrackerConfig) (*Client, error) {
+	endpoint := StringParam(cfg.Params, "endpoint", "https://api.linear.app/graphql")
+	apiKey := StringParam(cfg.Params, "api_key", "")
+	projectSlug := StringParam(cfg.Params, "project_slug", "")
+
+	// Fallback: check LINEAR_API_KEY env var if api_key not in params.
+	if apiKey == "" {
+		apiKey = os.Getenv("LINEAR_API_KEY")
+	}
+
+	return New(Options{
+		Endpoint:     endpoint,
+		APIKey:       apiKey,
+		ProjectSlug:  projectSlug,
+		ActiveStates: cfg.ActiveStates,
+		PageSize:     cfg.PageSize,
+		Timeout:      cfg.Timeout,
+	})
+}
+
+// StringParam extracts a string value from a params map with a fallback default.
+func StringParam(params map[string]any, key, fallback string) string {
+	if params == nil {
+		return fallback
+	}
+	v, ok := params[key]
+	if !ok {
+		return fallback
+	}
+	s, ok := v.(string)
+	if !ok {
+		return fallback
+	}
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return fallback
+	}
+	return s
 }
 
 func (c *Client) FetchCandidateIssues(ctx context.Context) ([]domain.Issue, error) {

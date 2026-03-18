@@ -14,17 +14,14 @@ func TestFromWorkflowConfig_DefaultsAndEnvResolution(t *testing.T) {
 		"tracker": map[string]any{
 			"kind":         "linear",
 			"project_slug": "proj",
-			// api_key intentionally omitted to use LINEAR_API_KEY
+			"api_key":      "$LINEAR_API_KEY",
 		},
 	})
 	if err != nil {
 		t.Fatalf("FromWorkflowConfig error: %v", err)
 	}
-	if cfg.Tracker.APIKey != "token123" {
-		t.Fatalf("expected api key from env, got %q", cfg.Tracker.APIKey)
-	}
-	if cfg.Tracker.Endpoint == "" {
-		t.Fatal("expected default endpoint")
+	if cfg.Tracker.Params["api_key"] != "token123" {
+		t.Fatalf("expected api key from env, got %q", cfg.Tracker.Params["api_key"])
 	}
 	if cfg.Workspace.Root == "" {
 		t.Fatal("expected workspace root default")
@@ -41,9 +38,7 @@ func TestFromWorkflowConfig_PathExpansion(t *testing.T) {
 	}
 	cfg, err := FromWorkflowConfig(map[string]any{
 		"tracker": map[string]any{
-			"kind":         "linear",
-			"project_slug": "proj",
-			"api_key":      "x",
+			"kind": "linear",
 		},
 		"workspace": map[string]any{
 			"root": "~/.symphony_test",
@@ -63,9 +58,7 @@ func TestFromWorkflowConfig_PathExpansion(t *testing.T) {
 func TestFromWorkflowConfig_StateConcurrencyMap(t *testing.T) {
 	cfg, err := FromWorkflowConfig(map[string]any{
 		"tracker": map[string]any{
-			"kind":         "linear",
-			"project_slug": "proj",
-			"api_key":      "x",
+			"kind": "linear",
 		},
 		"agent": map[string]any{
 			"max_concurrent_agents_by_state": map[string]any{
@@ -86,5 +79,38 @@ func TestFromWorkflowConfig_StateConcurrencyMap(t *testing.T) {
 	}
 	if _, ok := cfg.Agent.MaxConcurrentAgentsByState["bad"]; ok {
 		t.Fatalf("expected invalid entries ignored, got %#v", cfg.Agent.MaxConcurrentAgentsByState)
+	}
+}
+
+func TestFromWorkflowConfig_ParamsEnvResolution(t *testing.T) {
+	t.Setenv("MY_TOKEN", "resolved-value")
+
+	cfg, err := FromWorkflowConfig(map[string]any{
+		"tracker": map[string]any{
+			"kind":    "linear",
+			"api_key": "$MY_TOKEN",
+			"custom":  "$MY_TOKEN",
+		},
+	})
+	if err != nil {
+		t.Fatalf("FromWorkflowConfig error: %v", err)
+	}
+	if cfg.Tracker.Params["api_key"] != "resolved-value" {
+		t.Fatalf("expected resolved api_key, got %q", cfg.Tracker.Params["api_key"])
+	}
+	if cfg.Tracker.Params["custom"] != "resolved-value" {
+		t.Fatalf("expected resolved custom param, got %q", cfg.Tracker.Params["custom"])
+	}
+}
+
+func TestFromWorkflowConfig_EmptyKind_DefaultsToLinear(t *testing.T) {
+	cfg, err := FromWorkflowConfig(map[string]any{
+		"tracker": map[string]any{},
+	})
+	if err != nil {
+		t.Fatalf("FromWorkflowConfig error: %v", err)
+	}
+	if cfg.Tracker.Kind != "linear" {
+		t.Fatalf("expected default kind 'linear', got %q", cfg.Tracker.Kind)
 	}
 }
