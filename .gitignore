@@ -13,4 +13,4 @@ dist-ssr
 __unconfig*
 todos.json
 .vitepress
-WORKFLOW.md
+WORKFLOW_*.md
