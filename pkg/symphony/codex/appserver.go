@@ -23,6 +23,8 @@ type AppServer struct {
 
 	readTimeout time.Duration
 	turnTimeout time.Duration
+
+	tools toolExecutor
 }
 
 type AppServerOptions struct {
@@ -32,6 +34,10 @@ type AppServerOptions struct {
 	SandboxPolicy  any
 	ReadTimeout    time.Duration
 	TurnTimeout    time.Duration
+
+	LinearEndpoint string
+	LinearAPIKey   string
+	LinearTimeout  time.Duration
 }
 
 func NewAppServer(opts AppServerOptions) *AppServer {
@@ -43,6 +49,12 @@ func NewAppServer(opts AppServerOptions) *AppServer {
 	if turnTimeout <= 0 {
 		turnTimeout = time.Hour
 	}
+
+	tools := newDynamicTools(dynamicToolsOptions{
+		LinearEndpoint: opts.LinearEndpoint,
+		LinearAPIKey:   opts.LinearAPIKey,
+		Timeout:        opts.LinearTimeout,
+	})
 	return &AppServer{
 		command:        strings.TrimSpace(opts.Command),
 		approvalPolicy: opts.ApprovalPolicy,
@@ -50,6 +62,7 @@ func NewAppServer(opts AppServerOptions) *AppServer {
 		sandboxPolicy:  opts.SandboxPolicy,
 		readTimeout:    readTimeout,
 		turnTimeout:    turnTimeout,
+		tools:          tools,
 	}
 }
 
@@ -86,7 +99,7 @@ func (a *AppServer) StartSession(ctx context.Context, workspacePath string) (*Se
 		return nil, err
 	}
 
-	client := newRPCClient(proc, a.readTimeout)
+	client := newRPCClient(proc, a.readTimeout, a.tools)
 	if err := client.start(ctx); err != nil {
 		_ = proc.close()
 		return nil, err
@@ -180,6 +193,7 @@ type rpcMessage struct {
 type rpcClient struct {
 	proc        *process
 	readTimeout time.Duration
+	tools       toolExecutor
 
 	mu        sync.Mutex
 	nextID    int
@@ -197,10 +211,11 @@ type rpcEnvelope struct {
 	Error  json.RawMessage `json:"error,omitempty"`
 }
 
-func newRPCClient(proc *process, readTimeout time.Duration) *rpcClient {
+func newRPCClient(proc *process, readTimeout time.Duration, tools toolExecutor) *rpcClient {
 	return &rpcClient{
 		proc:        proc,
 		readTimeout: readTimeout,
+		tools:       tools,
 		nextID:      1,
 		waiters:     map[int]chan rpcEnvelope{},
 		events:      make(chan rpcMessage, 256),
@@ -229,11 +244,15 @@ func (c *rpcClient) start(ctx context.Context) error {
 }
 
 func (c *rpcClient) startThread(ctx context.Context, cwd string, approvalPolicy any, sandbox any) (string, error) {
-	resp, err := c.request(ctx, "thread/start", map[string]any{
+	params := map[string]any{
 		"approvalPolicy": approvalPolicy,
 		"sandbox":        sandbox,
 		"cwd":            cwd,
-	})
+	}
+	if c.tools != nil {
+		params["dynamicTools"] = c.tools.ToolSpecs()
+	}
+	resp, err := c.request(ctx, "thread/start", params)
 	if err != nil {
 		return "", err
 	}
@@ -361,34 +380,92 @@ func (c *rpcClient) readLoop() {
 			}
 		}
 
-		// Handle inbound requests that expect an immediate response (approvals / tools).
-		if ok && len(env.Result) == 0 && len(env.Error) == 0 && env.Method != "" {
-			if strings.Contains(strings.ToLower(env.Method), "approval") {
-				_ = c.proc.writeJSON(map[string]any{
-					"id": id,
-					"result": map[string]any{
-						"approved": true,
-					},
-				})
-				c.events <- rpcMessage{method: "approval_auto_approved", payload: map[string]any{"method": env.Method}}
-				continue
-			}
-			if strings.Contains(env.Method, "tool") {
-				_ = c.proc.writeJSON(map[string]any{
-					"id":     id,
-					"result": map[string]any{"success": false, "error": ErrUnsupportedToolCall.Error()},
-				})
-				c.events <- rpcMessage{method: ErrUnsupportedToolCall.Error(), payload: map[string]any{"method": env.Method}}
-				continue
-			}
-		}
-
 		payload := map[string]any{}
 		if len(env.Params) > 0 {
 			_ = json.Unmarshal(env.Params, &payload)
 		}
+
+		// Handle inbound requests that expect an immediate response (approvals / tools).
+		if ok && len(env.Result) == 0 && len(env.Error) == 0 && env.Method != "" {
+			switch env.Method {
+			case "item/tool/call":
+				toolName := toolCallName(payload)
+				arguments := toolCallArguments(payload)
+				var res map[string]any
+				if c.tools != nil {
+					res = c.tools.Execute(toolName, arguments)
+				} else {
+					res = dynamicToolResponse(false, map[string]any{
+						"error": map[string]any{
+							"message":        "Dynamic tools are not configured.",
+							"supportedTools": []any{linearGraphQLToolName},
+						},
+					})
+				}
+				_ = c.proc.writeJSON(map[string]any{
+					"id":     id,
+					"result": res,
+				})
+
+				eventName := "tool_call_failed"
+				if ok, _ := res["success"].(bool); ok {
+					eventName = "tool_call_completed"
+				} else if strings.TrimSpace(toolName) == "" {
+					eventName = ErrUnsupportedToolCall.Error()
+				}
+				c.events <- rpcMessage{method: eventName, payload: map[string]any{"tool": toolName}}
+				continue
+			default:
+				// Preserve legacy "auto approve everything" behavior when app-server emits approval requests.
+				// Symphony runs unattended by default; if the operator wants interactive approvals, they should
+				// choose a compatible Codex approval policy and extend this client accordingly.
+				if strings.Contains(strings.ToLower(env.Method), "approval") {
+					_ = c.proc.writeJSON(map[string]any{
+						"id": id,
+						"result": map[string]any{
+							"approved": true,
+						},
+					})
+					c.events <- rpcMessage{method: "approval_auto_approved", payload: map[string]any{"method": env.Method}}
+					continue
+				}
+				if strings.Contains(env.Method, "tool") {
+					_ = c.proc.writeJSON(map[string]any{
+						"id":     id,
+						"result": map[string]any{"success": false, "error": ErrUnsupportedToolCall.Error()},
+					})
+					c.events <- rpcMessage{method: ErrUnsupportedToolCall.Error(), payload: map[string]any{"method": env.Method}}
+					continue
+				}
+			}
+		}
+
 		c.events <- rpcMessage{idPresent: ok, id: id, method: env.Method, payload: payload}
 	}
+}
+
+func toolCallName(params map[string]any) string {
+	if params == nil {
+		return ""
+	}
+	for _, key := range []string{"tool", "name"} {
+		if v, ok := params[key]; ok {
+			if s, ok := v.(string); ok {
+				return strings.TrimSpace(s)
+			}
+		}
+	}
+	return ""
+}
+
+func toolCallArguments(params map[string]any) any {
+	if params == nil {
+		return map[string]any{}
+	}
+	if v, ok := params["arguments"]; ok {
+		return v
+	}
+	return map[string]any{}
 }
 
 func parseNumericID(raw json.RawMessage) (int, bool) {

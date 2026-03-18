@@ -330,6 +330,9 @@ func (o *Orchestrator) applyRuntimeLocked(portOverride *int) error {
 		SandboxPolicy:  o.cfg.Codex.TurnSandboxPolicy,
 		ReadTimeout:    o.cfg.Codex.ReadTimeout,
 		TurnTimeout:    o.cfg.Codex.TurnTimeout,
+		LinearEndpoint: o.cfg.Tracker.Endpoint,
+		LinearAPIKey:   o.cfg.Tracker.APIKey,
+		LinearTimeout:  o.cfg.Tracker.Timeout,
 	})
 
 	port := o.cfg.Server.Port

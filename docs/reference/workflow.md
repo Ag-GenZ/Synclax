@@ -41,6 +41,24 @@ Notes:
 - Only `kind: linear` is supported right now.
 - `api_key` may use `$ENV_VAR` expansion.
 
+## Dynamic tools (Codex app-server)
+
+During Codex `app-server` sessions, Symphony injects a small set of **dynamic tools** that the
+agent can call.
+
+Currently supported:
+
+- `linear_graphql`: execute raw Linear GraphQL queries/mutations using Symphony’s configured
+  Linear auth.
+
+Requirements:
+
+- `tracker.kind: linear`
+- `tracker.endpoint` points to Linear GraphQL (default is `https://api.linear.app/graphql`)
+- `tracker.api_key` is set (or `$LINEAR_API_KEY` is available in the environment)
+
+This is what the repo-level `.codex/skills/linear` skill expects.
+
 ### `polling`
 
 ```yaml
@@ -155,4 +173,3 @@ Follow this repo's contribution guidelines and WORKFLOW policy.
 ::: warning
 Because strict variables are enabled, missing variables cause template render errors. Keep the template compatible with the provided bindings.
 :::
-
