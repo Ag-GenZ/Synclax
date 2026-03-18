@@ -985,6 +985,13 @@ func updateRateLimits(res *TurnResult, payload map[string]any) {
 	}
 }
 
+// updateUsageAndRateLimits is kept for backward-compatible tests and callers.
+// The implementation was consolidated into updateRateLimits, which extracts both
+// usage totals and rate limit fields.
+func updateUsageAndRateLimits(res *TurnResult, payload map[string]any) {
+	updateRateLimits(res, payload)
+}
+
 func asInt(v any, fallback int) int {
 	switch t := v.(type) {
 	case int:

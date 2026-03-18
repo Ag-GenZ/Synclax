@@ -15,6 +15,9 @@ type Config struct {
 type SymphonyConfig struct {
 	// WorkflowPath is the path to WORKFLOW.md used by Symphony. If empty, defaults to "WORKFLOW.md".
 	WorkflowPath string `yaml:"workflow_path,omitempty"`
+	// WorkflowPaths is an optional list of WORKFLOW.md paths used by Symphony.
+	// When set, it takes precedence over WorkflowPath.
+	WorkflowPaths []string `yaml:"workflow_paths,omitempty"`
 	// HTTPPort enables Symphony's internal debug HTTP server when set. If nil, it is disabled.
 	HTTPPort *int `yaml:"http_port,omitempty"`
 }

@@ -3,8 +3,8 @@
 import { type DefaultError, queryOptions, type UseMutationOptions } from '@tanstack/react-query';
 
 import { client } from '../client.gen';
-import { getCounter, getHealth, getSymphonySnapshot, incrementCounter, type Options, startSymphony, stopSymphony } from '../sdk.gen';
-import type { GetCounterData, GetCounterResponse, GetHealthData, GetHealthResponse, GetSymphonySnapshotData, GetSymphonySnapshotResponse, IncrementCounterData, StartSymphonyData, StartSymphonyResponse, StopSymphonyData, StopSymphonyResponse } from '../types.gen';
+import { getCounter, getHealth, getSymphonySnapshot, getSymphonyWorkflows, incrementCounter, type Options, startSymphony, stopSymphony } from '../sdk.gen';
+import type { GetCounterData, GetCounterResponse, GetHealthData, GetHealthResponse, GetSymphonySnapshotData, GetSymphonySnapshotResponse, GetSymphonyWorkflowsData, GetSymphonyWorkflowsResponse, IncrementCounterData, StartSymphonyData, StartSymphonyResponse, StopSymphonyData, StopSymphonyResponse } from '../types.gen';
 
 export type QueryKey<TOptions extends Options> = [
     Pick<TOptions, 'baseUrl' | 'body' | 'headers' | 'path' | 'query'> & {
@@ -116,6 +116,26 @@ export const stopSymphonyMutation = (options?: Partial<Options<StopSymphonyData>
     };
     return mutationOptions;
 };
+
+export const getSymphonyWorkflowsQueryKey = (options?: Options<GetSymphonyWorkflowsData>) => createQueryKey('getSymphonyWorkflows', options);
+
+/**
+ * Symphony Workflows
+ *
+ * List known Symphony workflows for the web UI.
+ */
+export const getSymphonyWorkflowsOptions = (options?: Options<GetSymphonyWorkflowsData>) => queryOptions<GetSymphonyWorkflowsResponse, DefaultError, GetSymphonyWorkflowsResponse, ReturnType<typeof getSymphonyWorkflowsQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await getSymphonyWorkflows({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: getSymphonyWorkflowsQueryKey(options)
+});
 
 export const getCounterQueryKey = (options?: Options<GetCounterData>) => createQueryKey('getCounter', options);
 

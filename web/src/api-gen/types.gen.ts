@@ -7,15 +7,21 @@ export type ClientOptions = {
 export type HealthResponse = {
     status: string;
     symphony_running: boolean;
+    symphony_active_workflow_id?: string | null;
     symphony_workflow_path?: string | null;
     symphony_last_error?: string | null;
     /**
      * The port of Symphony's debug HTTP server, if running.
      */
     symphony_http_port?: number | null;
+    symphony_workflows?: Array<SymphonyWorkflow> | null;
 };
 
 export type StartSymphonyRequest = {
+    /**
+     * Optional workflow id (preferred when starting a known workflow).
+     */
+    workflow_id?: string;
     /**
      * Optional path to WORKFLOW.md. If omitted, server default is used.
      */
@@ -28,11 +34,26 @@ export type StartSymphonyRequest = {
 
 export type StartSymphonyResult = {
     running: boolean;
+    workflow_id?: string | null;
     workflow_path?: string | null;
 };
 
 export type StopSymphonyResult = {
     running: boolean;
+    workflow_id?: string | null;
+};
+
+export type SymphonyWorkflow = {
+    id: string;
+    workflow_path: string;
+    running: boolean;
+    last_error?: string | null;
+    http_port?: number | null;
+};
+
+export type SymphonyWorkflowsResponse = {
+    workflows: Array<SymphonyWorkflow>;
+    active_workflow_id?: string | null;
 };
 
 export type SymphonySnapshot = {
@@ -158,7 +179,12 @@ export type GetHealthResponse = GetHealthResponses[keyof GetHealthResponses];
 export type GetSymphonySnapshotData = {
     body?: never;
     path?: never;
-    query?: never;
+    query?: {
+        /**
+         * Optional workflow id to scope the snapshot (defaults to active workflow).
+         */
+        workflow_id?: string;
+    };
     url: '/symphony/snapshot';
 };
 
@@ -190,7 +216,12 @@ export type StartSymphonyResponse = StartSymphonyResponses[keyof StartSymphonyRe
 export type StopSymphonyData = {
     body?: never;
     path?: never;
-    query?: never;
+    query?: {
+        /**
+         * Optional workflow id to stop (defaults to all workflows).
+         */
+        workflow_id?: string;
+    };
     url: '/symphony/stop';
 };
 
@@ -202,6 +233,22 @@ export type StopSymphonyResponses = {
 };
 
 export type StopSymphonyResponse = StopSymphonyResponses[keyof StopSymphonyResponses];
+
+export type GetSymphonyWorkflowsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/symphony/workflows';
+};
+
+export type GetSymphonyWorkflowsResponses = {
+    /**
+     * Workflow list
+     */
+    200: SymphonyWorkflowsResponse;
+};
+
+export type GetSymphonyWorkflowsResponse = GetSymphonyWorkflowsResponses[keyof GetSymphonyWorkflowsResponses];
 
 export type GetCounterData = {
     body?: never;

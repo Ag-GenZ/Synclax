@@ -1,7 +1,7 @@
 "use client";
 
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useCallback } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ActivityIcon,
@@ -23,6 +23,7 @@ import {
 import {
   getHealthOptions,
   getSymphonySnapshotOptions,
+  getSymphonyWorkflowsOptions,
   startSymphonyMutation,
   stopSymphonyMutation,
 } from "#/api-gen/@tanstack/react-query.gen";
@@ -50,6 +51,13 @@ import { Separator } from "#/components/ui/separator";
 import { Skeleton } from "#/components/ui/skeleton";
 import { Alert, AlertTitle, AlertDescription } from "#/components/ui/alert";
 import { ScrollArea } from "#/components/ui/scroll-area";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectPopup,
+  SelectItem,
+} from "#/components/ui/select";
 import {
   Table,
   TableHeader,
@@ -88,18 +96,63 @@ function SymphonyDashboard() {
   });
 
   const {
+    data: workflowsRes,
+    isLoading: workflowsLoading,
+    error: workflowsError,
+  } = useQuery({
+    ...getSymphonyWorkflowsOptions(),
+    refetchInterval: 4000,
+  });
+
+  const [workflowId, setWorkflowId] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return window.localStorage.getItem("symphony.workflow_id") ?? "";
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (workflowId) {
+      window.localStorage.setItem("symphony.workflow_id", workflowId);
+    }
+  }, [workflowId]);
+
+  const workflows = workflowsRes?.workflows ?? [];
+  const activeWorkflowId = workflowsRes?.active_workflow_id ?? null;
+
+  useEffect(() => {
+    if (workflowId) return;
+    const next = activeWorkflowId ?? workflows[0]?.id ?? "";
+    if (next) setWorkflowId(next);
+  }, [workflowId, activeWorkflowId, workflows]);
+
+  const selectedWorkflow = useMemo(() => {
+    return (
+      workflows.find((w) => w.id === workflowId) ??
+      workflows.find((w) => w.id === activeWorkflowId) ??
+      workflows[0]
+    );
+  }, [workflows, workflowId, activeWorkflowId]);
+
+  const selectedWorkflowId = selectedWorkflow?.id ?? "";
+
+  const {
     data: snapshot,
     isLoading: snapLoading,
     error: snapError,
     dataUpdatedAt,
   } = useQuery({
-    ...getSymphonySnapshotOptions(),
+    ...getSymphonySnapshotOptions(
+      selectedWorkflowId ? { query: { workflow_id: selectedWorkflowId } } : undefined,
+    ),
     refetchInterval: 1000,
+    enabled: !!selectedWorkflowId,
   });
 
   const { mutate: doStart, isPending: isStarting } = useMutation({
     ...startSymphonyMutation(),
-    onSuccess: () => {
+    onSuccess: (data) => {
+      const wid = data?.workflow_id ?? null;
+      if (wid) setWorkflowId(wid);
       toastManager.add({ title: "Symphony started", type: "success" });
       qc.invalidateQueries();
     },
@@ -119,16 +172,32 @@ function SymphonyDashboard() {
 
   const handleStart = useCallback(
     (path?: string, port?: number) => {
-      doStart({ body: { workflow_path: path, http_port: port } });
+      const body: Record<string, unknown> = {};
+      if (path) {
+        body.workflow_path = path;
+      } else if (selectedWorkflowId) {
+        body.workflow_id = selectedWorkflowId;
+      }
+      if (port != null) body.http_port = port;
+      doStart(Object.keys(body).length ? { body } : {});
     },
-    [doStart],
+    [doStart, selectedWorkflowId],
   );
 
-  const handleStop = useCallback(() => doStop({}), [doStop]);
+  const handleStop = useCallback(() => {
+    if (selectedWorkflowId) {
+      doStop({ query: { workflow_id: selectedWorkflowId } });
+    } else {
+      doStop({});
+    }
+  }, [doStop, selectedWorkflowId]);
   const handleRefresh = useCallback(() => qc.invalidateQueries(), [qc]);
 
-  const isRunning = health?.symphony_running ?? false;
-  const debugPort = health?.symphony_http_port;
+  const anyRunning = health?.symphony_running ?? false;
+  const isRunning = selectedWorkflow?.running ?? false;
+  const debugPort = selectedWorkflow?.http_port;
+  const selectedWorkflowPath = selectedWorkflow?.workflow_path;
+  const selectedLastError = selectedWorkflow?.last_error;
   const runningCount = snapshot?.running.length ?? 0;
   const retryingCount = snapshot?.retrying.length ?? 0;
   const completedCount = snapshot?.completed?.length ?? 0;
@@ -136,7 +205,7 @@ function SymphonyDashboard() {
   const secondsRunning = snapshot?.codex_totals.seconds_running ?? 0;
   const rateLimits = snapshot?.rate_limits;
   const hasRateLimits = rateLimits && Object.keys(rateLimits).length > 0;
-  const isLoading = healthLoading || snapLoading;
+  const isLoading = healthLoading || workflowsLoading || snapLoading;
   const activity = snapshot ? collectActivity(snapshot.running) : [];
   const activityCount = activity.length;
 
@@ -149,7 +218,7 @@ function SymphonyDashboard() {
             <div className="flex items-center gap-2.5">
               <div className="relative flex size-7 items-center justify-center rounded-lg bg-[var(--lagoon-deep)] text-white shadow-sm">
                 <ZapIcon className="size-3.5" />
-                {isRunning && (
+                {anyRunning && (
                   <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-success ring-2 ring-sidebar" />
                 )}
               </div>
@@ -198,7 +267,7 @@ function SymphonyDashboard() {
                 <div className="rounded-lg border bg-sidebar-accent/40 p-3 space-y-2.5">
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-muted-foreground">Orchestrator</span>
-                    {healthLoading ? (
+                    {workflowsLoading ? (
                       <Skeleton className="h-4 w-16" />
                     ) : (
                       <Badge variant={isRunning ? "success" : "outline"} size="sm">
@@ -206,17 +275,38 @@ function SymphonyDashboard() {
                       </Badge>
                     )}
                   </div>
-                  {health?.symphony_workflow_path && (
-                    <div>
-                      <div className="text-xs text-muted-foreground mb-0.5">Workflow</div>
-                      <div className="font-mono text-xs truncate">
-                        {health.symphony_workflow_path}
+                  <div className="space-y-1.5">
+                    <div className="text-xs text-muted-foreground">Workflow</div>
+                    {workflowsLoading ? (
+                      <Skeleton className="h-8 w-full" />
+                    ) : workflows.length > 0 ? (
+                      <Select
+                        value={selectedWorkflowId || null}
+                        onValueChange={(value) => setWorkflowId(value ?? "")}
+                      >
+                        <SelectTrigger size="sm" className="h-8">
+                          <SelectValue placeholder="Select workflow…" />
+                        </SelectTrigger>
+                        <SelectPopup>
+                          {workflows.map((w) => (
+                            <SelectItem key={w.id} value={w.id}>
+                              <span className="font-mono text-xs truncate">{w.workflow_path}</span>
+                            </SelectItem>
+                          ))}
+                        </SelectPopup>
+                      </Select>
+                    ) : (
+                      <div className="text-xs text-muted-foreground">No workflows</div>
+                    )}
+                    {selectedWorkflowPath && (
+                      <div className="font-mono text-[11px] text-muted-foreground truncate">
+                        {selectedWorkflowPath}
                       </div>
-                    </div>
-                  )}
-                  {health?.symphony_last_error && (
+                    )}
+                  </div>
+                  {selectedLastError && (
                     <div className="font-mono text-xs text-destructive-foreground line-clamp-2">
-                      {health.symphony_last_error}
+                      {selectedLastError}
                     </div>
                   )}
                   <Separator />
@@ -286,12 +376,12 @@ function SymphonyDashboard() {
           <ScrollArea className="flex-1">
             <div className="p-6 space-y-6 max-w-7xl mx-auto">
               {/* Error */}
-              {(healthError || snapError) && (
+              {(healthError || workflowsError || snapError) && (
                 <Alert variant="error">
                   <AlertCircleIcon className="size-4" />
                   <AlertTitle>Connection error</AlertTitle>
                   <AlertDescription>
-                    {String(healthError ?? snapError)}. Is the Synclax server running on{" "}
+                    {String(healthError ?? workflowsError ?? snapError)}. Is the Synclax server running on{" "}
                     <code className="rounded bg-muted px-1 text-xs">localhost:2910</code>?
                   </AlertDescription>
                 </Alert>

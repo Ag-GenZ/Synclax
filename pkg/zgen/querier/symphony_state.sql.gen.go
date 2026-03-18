@@ -11,8 +11,22 @@ import (
 	"time"
 )
 
-type SymphonyState struct {
+const getSymphonyState = `-- name: GetSymphonyState :one
+SELECT
+    id,
+    workflow_id,
+    codex_input_tokens,
+    codex_output_tokens,
+    codex_total_tokens,
+    rate_limits,
+    updated_at
+FROM symphony_state
+WHERE workflow_id = $1
+`
+
+type GetSymphonyStateRow struct {
 	ID                int32
+	WorkflowID        string
 	CodexInputTokens  int64
 	CodexOutputTokens int64
 	CodexTotalTokens  int64
@@ -20,34 +34,12 @@ type SymphonyState struct {
 	UpdatedAt         time.Time
 }
 
-type UpsertSymphonyStateParams struct {
-	CodexInputTokens  int64
-	CodexOutputTokens int64
-	CodexTotalTokens  int64
-	RateLimits        json.RawMessage
-}
-
-type ListSymphonyCompletedAttemptsRow struct {
-	Entry json.RawMessage
-}
-
-const getSymphonyState = `-- name: GetSymphonyState :one
-SELECT
-    id,
-    codex_input_tokens,
-    codex_output_tokens,
-    codex_total_tokens,
-    rate_limits,
-    updated_at
-FROM symphony_state
-WHERE id = 1
-`
-
-func (q *Queries) GetSymphonyState(ctx context.Context) (*SymphonyState, error) {
-	row := q.db.QueryRow(ctx, getSymphonyState)
-	var i SymphonyState
+func (q *Queries) GetSymphonyState(ctx context.Context, workflowID string) (*GetSymphonyStateRow, error) {
+	row := q.db.QueryRow(ctx, getSymphonyState, workflowID)
+	var i GetSymphonyStateRow
 	err := row.Scan(
 		&i.ID,
+		&i.WorkflowID,
 		&i.CodexInputTokens,
 		&i.CodexOutputTokens,
 		&i.CodexTotalTokens,
@@ -57,17 +49,88 @@ func (q *Queries) GetSymphonyState(ctx context.Context) (*SymphonyState, error) 
 	return &i, err
 }
 
+const insertSymphonyCompletedAttempt = `-- name: InsertSymphonyCompletedAttempt :exec
+INSERT INTO symphony_completed_attempts (workflow_id, entry)
+VALUES ($1, $2)
+`
+
+type InsertSymphonyCompletedAttemptParams struct {
+	WorkflowID string
+	Entry      json.RawMessage
+}
+
+func (q *Queries) InsertSymphonyCompletedAttempt(ctx context.Context, arg InsertSymphonyCompletedAttemptParams) error {
+	_, err := q.db.Exec(ctx, insertSymphonyCompletedAttempt, arg.WorkflowID, arg.Entry)
+	return err
+}
+
+const listSymphonyCompletedAttempts = `-- name: ListSymphonyCompletedAttempts :many
+SELECT entry
+FROM symphony_completed_attempts
+WHERE workflow_id = $1
+ORDER BY id DESC
+LIMIT $2
+`
+
+type ListSymphonyCompletedAttemptsParams struct {
+	WorkflowID string
+	Limit      int32
+}
+
+func (q *Queries) ListSymphonyCompletedAttempts(ctx context.Context, arg ListSymphonyCompletedAttemptsParams) ([]json.RawMessage, error) {
+	rows, err := q.db.Query(ctx, listSymphonyCompletedAttempts, arg.WorkflowID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []json.RawMessage
+	for rows.Next() {
+		var entry json.RawMessage
+		if err := rows.Scan(&entry); err != nil {
+			return nil, err
+		}
+		items = append(items, entry)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const pruneSymphonyCompletedAttempts = `-- name: PruneSymphonyCompletedAttempts :exec
+DELETE FROM symphony_completed_attempts sca
+WHERE sca.workflow_id = $1
+  AND sca.id < (
+    SELECT sca2.id
+    FROM symphony_completed_attempts sca2
+    WHERE sca2.workflow_id = $1
+    ORDER BY sca2.id DESC
+    OFFSET GREATEST(($2)::int - 1, 0)
+    LIMIT 1
+)
+`
+
+type PruneSymphonyCompletedAttemptsParams struct {
+	WorkflowID string
+	Keep       int32
+}
+
+func (q *Queries) PruneSymphonyCompletedAttempts(ctx context.Context, arg PruneSymphonyCompletedAttemptsParams) error {
+	_, err := q.db.Exec(ctx, pruneSymphonyCompletedAttempts, arg.WorkflowID, arg.Keep)
+	return err
+}
+
 const upsertSymphonyState = `-- name: UpsertSymphonyState :exec
 INSERT INTO symphony_state (
-    id,
+    workflow_id,
     codex_input_tokens,
     codex_output_tokens,
     codex_total_tokens,
     rate_limits,
     updated_at
 )
-VALUES (1, $1, $2, $3, $4, now())
-ON CONFLICT (id) DO UPDATE SET
+VALUES ($1, $2, $3, $4, $5, now())
+ON CONFLICT (workflow_id) DO UPDATE SET
     codex_input_tokens = EXCLUDED.codex_input_tokens,
     codex_output_tokens = EXCLUDED.codex_output_tokens,
     codex_total_tokens = EXCLUDED.codex_total_tokens,
@@ -75,60 +138,21 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = now()
 `
 
+type UpsertSymphonyStateParams struct {
+	WorkflowID        string
+	CodexInputTokens  int64
+	CodexOutputTokens int64
+	CodexTotalTokens  int64
+	RateLimits        json.RawMessage
+}
+
 func (q *Queries) UpsertSymphonyState(ctx context.Context, arg UpsertSymphonyStateParams) error {
-	_, err := q.db.Exec(ctx, upsertSymphonyState, arg.CodexInputTokens, arg.CodexOutputTokens, arg.CodexTotalTokens, arg.RateLimits)
+	_, err := q.db.Exec(ctx, upsertSymphonyState,
+		arg.WorkflowID,
+		arg.CodexInputTokens,
+		arg.CodexOutputTokens,
+		arg.CodexTotalTokens,
+		arg.RateLimits,
+	)
 	return err
-}
-
-const insertSymphonyCompletedAttempt = `-- name: InsertSymphonyCompletedAttempt :exec
-INSERT INTO symphony_completed_attempts (entry)
-VALUES ($1)
-`
-
-func (q *Queries) InsertSymphonyCompletedAttempt(ctx context.Context, entry json.RawMessage) error {
-	_, err := q.db.Exec(ctx, insertSymphonyCompletedAttempt, entry)
-	return err
-}
-
-const pruneSymphonyCompletedAttempts = `-- name: PruneSymphonyCompletedAttempts :exec
-DELETE FROM symphony_completed_attempts
-WHERE id < (
-    SELECT id
-    FROM symphony_completed_attempts
-    ORDER BY id DESC
-    OFFSET GREATEST($1 - 1, 0)
-    LIMIT 1
-)
-`
-
-func (q *Queries) PruneSymphonyCompletedAttempts(ctx context.Context, keep int32) error {
-	_, err := q.db.Exec(ctx, pruneSymphonyCompletedAttempts, keep)
-	return err
-}
-
-const listSymphonyCompletedAttempts = `-- name: ListSymphonyCompletedAttempts :many
-SELECT entry
-FROM symphony_completed_attempts
-ORDER BY id DESC
-LIMIT $1
-`
-
-func (q *Queries) ListSymphonyCompletedAttempts(ctx context.Context, limit int32) ([]ListSymphonyCompletedAttemptsRow, error) {
-	rows, err := q.db.Query(ctx, listSymphonyCompletedAttempts, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListSymphonyCompletedAttemptsRow
-	for rows.Next() {
-		var i ListSymphonyCompletedAttemptsRow
-		if err := rows.Scan(&i.Entry); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }

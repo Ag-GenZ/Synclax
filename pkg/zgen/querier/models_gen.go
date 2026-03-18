@@ -4,7 +4,29 @@
 
 package querier
 
+import (
+	"encoding/json"
+	"time"
+)
+
 type Counter struct {
 	ID    int32
 	Value int32
+}
+
+type SymphonyCompletedAttempt struct {
+	ID         int64
+	Entry      json.RawMessage
+	CreatedAt  time.Time
+	WorkflowID string
+}
+
+type SymphonyState struct {
+	ID                int32
+	CodexInputTokens  int64
+	CodexOutputTokens int64
+	CodexTotalTokens  int64
+	RateLimits        json.RawMessage
+	UpdatedAt         time.Time
+	WorkflowID        string
 }

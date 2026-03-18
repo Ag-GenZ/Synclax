@@ -64,20 +64,61 @@ func (h *Handler) GetHealth(c *fiber.Ctx) error {
 		httpPort = &p
 	}
 
+	var activeWorkflowID *string
+	if strings.TrimSpace(health.ActiveWorkflowID) != "" {
+		id := health.ActiveWorkflowID
+		activeWorkflowID = &id
+	}
+
+	var workflows *[]apigen.SymphonyWorkflow
+	if len(health.Workflows) > 0 {
+		out := make([]apigen.SymphonyWorkflow, 0, len(health.Workflows))
+		for _, w := range health.Workflows {
+			var we *string
+			if w.LastError != nil {
+				s := w.LastError.Error()
+				we = &s
+			}
+			var wp *int32
+			if w.HTTPPort != nil {
+				p := int32(*w.HTTPPort)
+				wp = &p
+			}
+			out = append(out, apigen.SymphonyWorkflow{
+				Id:           w.ID,
+				WorkflowPath: w.WorkflowPath,
+				Running:      w.Running,
+				LastError:    we,
+				HttpPort:     wp,
+			})
+		}
+		workflows = &out
+	}
+
 	return c.JSON(apigen.HealthResponse{
-		Status:               "ok",
-		SymphonyRunning:      health.Running,
-		SymphonyWorkflowPath: workflowPath,
-		SymphonyLastError:    lastErr,
-		SymphonyHttpPort:     httpPort,
+		Status:                   "ok",
+		SymphonyRunning:          health.Running,
+		SymphonyActiveWorkflowId: activeWorkflowID,
+		SymphonyWorkflowPath:     workflowPath,
+		SymphonyLastError:        lastErr,
+		SymphonyHttpPort:         httpPort,
+		SymphonyWorkflows:        workflows,
 	})
 }
 
-func (h *Handler) GetSymphonySnapshot(c *fiber.Ctx) error {
+func (h *Handler) GetSymphonySnapshot(c *fiber.Ctx, params apigen.GetSymphonySnapshotParams) error {
 	if h.symphony == nil {
 		return c.Status(fiber.StatusServiceUnavailable).SendString("symphony manager not configured")
 	}
-	return c.JSON(h.symphony.Snapshot())
+	workflowID := ""
+	if params.WorkflowId != nil {
+		workflowID = strings.TrimSpace(*params.WorkflowId)
+	}
+	snap, err := h.symphony.Snapshot(workflowID)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).SendString(err.Error())
+	}
+	return c.JSON(snap)
 }
 
 func (h *Handler) StartSymphony(c *fiber.Ctx) error {
@@ -96,6 +137,10 @@ func (h *Handler) StartSymphony(c *fiber.Ctx) error {
 	if req.WorkflowPath != nil {
 		workflowPath = strings.TrimSpace(*req.WorkflowPath)
 	}
+	workflowID := ""
+	if req.WorkflowId != nil {
+		workflowID = strings.TrimSpace(*req.WorkflowId)
+	}
 
 	var httpPort *int
 	if req.HttpPort != nil {
@@ -103,7 +148,7 @@ func (h *Handler) StartSymphony(c *fiber.Ctx) error {
 		httpPort = &p
 	}
 
-	if err := h.symphony.Start(c.Context(), workflowPath, httpPort); err != nil {
+	if err := h.symphony.Start(c.Context(), workflowID, workflowPath, httpPort); err != nil {
 		// Conflict is a client error; others are server errors.
 		if strings.Contains(strings.ToLower(err.Error()), "already running") {
 			return c.Status(fiber.StatusConflict).SendString(err.Error())
@@ -117,19 +162,73 @@ func (h *Handler) StartSymphony(c *fiber.Ctx) error {
 		p := health.WorkflowPath
 		wp = &p
 	}
-	return c.JSON(apigen.StartSymphonyResult{Running: health.Running, WorkflowPath: wp})
+	var wid *string
+	if strings.TrimSpace(health.ActiveWorkflowID) != "" {
+		id := health.ActiveWorkflowID
+		wid = &id
+	}
+	return c.JSON(apigen.StartSymphonyResult{Running: health.Running, WorkflowId: wid, WorkflowPath: wp})
 }
 
-func (h *Handler) StopSymphony(c *fiber.Ctx) error {
+func (h *Handler) StopSymphony(c *fiber.Ctx, params apigen.StopSymphonyParams) error {
 	if h.symphony == nil {
 		return c.Status(fiber.StatusServiceUnavailable).SendString("symphony manager not configured")
 	}
-	if err := h.symphony.Stop(c.Context()); err != nil {
+
+	workflowID := ""
+	if params.WorkflowId != nil {
+		workflowID = strings.TrimSpace(*params.WorkflowId)
+	}
+
+	if err := h.symphony.Stop(c.Context(), workflowID); err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return c.Status(fiber.StatusRequestTimeout).SendString(err.Error())
 		}
 		return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
 	}
 	health := h.symphony.Health()
-	return c.JSON(apigen.StopSymphonyResult{Running: health.Running})
+	var wid *string
+	if strings.TrimSpace(workflowID) != "" {
+		id := workflowID
+		wid = &id
+	}
+	return c.JSON(apigen.StopSymphonyResult{Running: health.Running, WorkflowId: wid})
+}
+
+func (h *Handler) GetSymphonyWorkflows(c *fiber.Ctx) error {
+	if h.symphony == nil {
+		return c.Status(fiber.StatusServiceUnavailable).SendString("symphony manager not configured")
+	}
+	health := h.symphony.Health()
+	workflows := make([]apigen.SymphonyWorkflow, 0, len(health.Workflows))
+	for _, w := range health.Workflows {
+		var we *string
+		if w.LastError != nil {
+			s := w.LastError.Error()
+			we = &s
+		}
+		var wp *int32
+		if w.HTTPPort != nil {
+			p := int32(*w.HTTPPort)
+			wp = &p
+		}
+		workflows = append(workflows, apigen.SymphonyWorkflow{
+			Id:           w.ID,
+			WorkflowPath: w.WorkflowPath,
+			Running:      w.Running,
+			LastError:    we,
+			HttpPort:     wp,
+		})
+	}
+
+	var active *string
+	if strings.TrimSpace(health.ActiveWorkflowID) != "" {
+		id := health.ActiveWorkflowID
+		active = &id
+	}
+
+	return c.JSON(apigen.SymphonyWorkflowsResponse{
+		ActiveWorkflowId: active,
+		Workflows:        workflows,
+	})
 }

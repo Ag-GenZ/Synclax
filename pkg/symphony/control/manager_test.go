@@ -8,14 +8,26 @@ import (
 )
 
 func TestSnapshotSecondsRunningIncreases(t *testing.T) {
-	m := &Manager{startedAt: time.Now().Add(-500 * time.Millisecond)}
+	m := &Manager{
+		workflows: map[string]*workflowEntry{
+			"w1": {id: "w1", startedAt: time.Now().Add(-500 * time.Millisecond)},
+		},
+		order:    []string{"w1"},
+		activeID: "w1",
+	}
 
-	s1 := m.Snapshot()
+	s1, err := m.Snapshot("")
+	if err != nil {
+		t.Fatalf("snapshot: %v", err)
+	}
 	sec1 := snapshotSecondsRunning(t, s1)
 
 	time.Sleep(25 * time.Millisecond)
 
-	s2 := m.Snapshot()
+	s2, err := m.Snapshot("")
+	if err != nil {
+		t.Fatalf("snapshot: %v", err)
+	}
 	sec2 := snapshotSecondsRunning(t, s2)
 
 	if sec2 <= sec1 {

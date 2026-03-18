@@ -70,6 +70,21 @@ func (mr *MockModelInterfaceMockRecorder) GetCounter(ctx any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCounter", reflect.TypeOf((*MockModelInterface)(nil).GetCounter), ctx)
 }
 
+// GetSymphonyState mocks base method.
+func (m *MockModelInterface) GetSymphonyState(ctx context.Context, workflowID string) (*querier.GetSymphonyStateRow, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetSymphonyState", ctx, workflowID)
+	ret0, _ := ret[0].(*querier.GetSymphonyStateRow)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetSymphonyState indicates an expected call of GetSymphonyState.
+func (mr *MockModelInterfaceMockRecorder) GetSymphonyState(ctx, workflowID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetSymphonyState", reflect.TypeOf((*MockModelInterface)(nil).GetSymphonyState), ctx, workflowID)
+}
+
 // InTransaction mocks base method.
 func (m *MockModelInterface) InTransaction() bool {
 	m.ctrl.T.Helper()
@@ -98,76 +113,47 @@ func (mr *MockModelInterfaceMockRecorder) IncrementCounter(ctx any) *gomock.Call
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IncrementCounter", reflect.TypeOf((*MockModelInterface)(nil).IncrementCounter), ctx)
 }
 
-// GetSymphonyState mocks base method.
-func (m *MockModelInterface) GetSymphonyState(ctx context.Context) (*querier.SymphonyState, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetSymphonyState", ctx)
-	ret0, _ := ret[0].(*querier.SymphonyState)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// GetSymphonyState indicates an expected call of GetSymphonyState.
-func (mr *MockModelInterfaceMockRecorder) GetSymphonyState(ctx any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetSymphonyState", reflect.TypeOf((*MockModelInterface)(nil).GetSymphonyState), ctx)
-}
-
 // InsertSymphonyCompletedAttempt mocks base method.
-func (m *MockModelInterface) InsertSymphonyCompletedAttempt(ctx context.Context, entry json.RawMessage) error {
+func (m *MockModelInterface) InsertSymphonyCompletedAttempt(ctx context.Context, arg querier.InsertSymphonyCompletedAttemptParams) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "InsertSymphonyCompletedAttempt", ctx, entry)
+	ret := m.ctrl.Call(m, "InsertSymphonyCompletedAttempt", ctx, arg)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // InsertSymphonyCompletedAttempt indicates an expected call of InsertSymphonyCompletedAttempt.
-func (mr *MockModelInterfaceMockRecorder) InsertSymphonyCompletedAttempt(ctx, entry any) *gomock.Call {
+func (mr *MockModelInterfaceMockRecorder) InsertSymphonyCompletedAttempt(ctx, arg any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InsertSymphonyCompletedAttempt", reflect.TypeOf((*MockModelInterface)(nil).InsertSymphonyCompletedAttempt), ctx, entry)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InsertSymphonyCompletedAttempt", reflect.TypeOf((*MockModelInterface)(nil).InsertSymphonyCompletedAttempt), ctx, arg)
 }
 
 // ListSymphonyCompletedAttempts mocks base method.
-func (m *MockModelInterface) ListSymphonyCompletedAttempts(ctx context.Context, limit int32) ([]querier.ListSymphonyCompletedAttemptsRow, error) {
+func (m *MockModelInterface) ListSymphonyCompletedAttempts(ctx context.Context, arg querier.ListSymphonyCompletedAttemptsParams) ([]json.RawMessage, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListSymphonyCompletedAttempts", ctx, limit)
-	ret0, _ := ret[0].([]querier.ListSymphonyCompletedAttemptsRow)
+	ret := m.ctrl.Call(m, "ListSymphonyCompletedAttempts", ctx, arg)
+	ret0, _ := ret[0].([]json.RawMessage)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // ListSymphonyCompletedAttempts indicates an expected call of ListSymphonyCompletedAttempts.
-func (mr *MockModelInterfaceMockRecorder) ListSymphonyCompletedAttempts(ctx, limit any) *gomock.Call {
+func (mr *MockModelInterfaceMockRecorder) ListSymphonyCompletedAttempts(ctx, arg any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListSymphonyCompletedAttempts", reflect.TypeOf((*MockModelInterface)(nil).ListSymphonyCompletedAttempts), ctx, limit)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListSymphonyCompletedAttempts", reflect.TypeOf((*MockModelInterface)(nil).ListSymphonyCompletedAttempts), ctx, arg)
 }
 
 // PruneSymphonyCompletedAttempts mocks base method.
-func (m *MockModelInterface) PruneSymphonyCompletedAttempts(ctx context.Context, keep int32) error {
+func (m *MockModelInterface) PruneSymphonyCompletedAttempts(ctx context.Context, arg querier.PruneSymphonyCompletedAttemptsParams) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "PruneSymphonyCompletedAttempts", ctx, keep)
+	ret := m.ctrl.Call(m, "PruneSymphonyCompletedAttempts", ctx, arg)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // PruneSymphonyCompletedAttempts indicates an expected call of PruneSymphonyCompletedAttempts.
-func (mr *MockModelInterfaceMockRecorder) PruneSymphonyCompletedAttempts(ctx, keep any) *gomock.Call {
+func (mr *MockModelInterfaceMockRecorder) PruneSymphonyCompletedAttempts(ctx, arg any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PruneSymphonyCompletedAttempts", reflect.TypeOf((*MockModelInterface)(nil).PruneSymphonyCompletedAttempts), ctx, keep)
-}
-
-// UpsertSymphonyState mocks base method.
-func (m *MockModelInterface) UpsertSymphonyState(ctx context.Context, arg querier.UpsertSymphonyStateParams) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpsertSymphonyState", ctx, arg)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// UpsertSymphonyState indicates an expected call of UpsertSymphonyState.
-func (mr *MockModelInterfaceMockRecorder) UpsertSymphonyState(ctx, arg any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpsertSymphonyState", reflect.TypeOf((*MockModelInterface)(nil).UpsertSymphonyState), ctx, arg)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PruneSymphonyCompletedAttempts", reflect.TypeOf((*MockModelInterface)(nil).PruneSymphonyCompletedAttempts), ctx, arg)
 }
 
 // RunTransaction mocks base method.
@@ -210,4 +196,18 @@ func (m *MockModelInterface) SpawnWithTx(tx pgx.Tx) ModelInterface {
 func (mr *MockModelInterfaceMockRecorder) SpawnWithTx(tx any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SpawnWithTx", reflect.TypeOf((*MockModelInterface)(nil).SpawnWithTx), tx)
+}
+
+// UpsertSymphonyState mocks base method.
+func (m *MockModelInterface) UpsertSymphonyState(ctx context.Context, arg querier.UpsertSymphonyStateParams) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpsertSymphonyState", ctx, arg)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpsertSymphonyState indicates an expected call of UpsertSymphonyState.
+func (mr *MockModelInterfaceMockRecorder) UpsertSymphonyState(ctx, arg any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpsertSymphonyState", reflect.TypeOf((*MockModelInterface)(nil).UpsertSymphonyState), ctx, arg)
 }

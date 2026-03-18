@@ -37,7 +37,10 @@ export function useDebugState(port: number | null | undefined) {
 export function useDebugHealthz(port: number | null | undefined) {
   return useQuery<string>({
     queryKey: ["debug-healthz", port],
-    queryFn: () => ofetch<string>(`${debugBaseUrl(port!)}/healthz`, { responseType: "text" }),
+    queryFn: async () => {
+      const res = await fetch(`${debugBaseUrl(port!)}/healthz`);
+      return res.text();
+    },
     enabled: port != null && port > 0,
     refetchInterval: 5000,
     retry: 1,

@@ -29,6 +29,13 @@ paths:
       summary: Symphony Snapshot
       description: Get a snapshot of Symphony orchestrator state for the web UI.
       operationId: getSymphonySnapshot
+      parameters:
+        - name: workflow_id
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Optional workflow id to scope the snapshot (defaults to active workflow).
       responses:
         "200":
           description: Current Symphony snapshot
@@ -63,6 +70,13 @@ paths:
       summary: Stop Symphony
       description: Stop the Symphony orchestrator (idempotent).
       operationId: stopSymphony
+      parameters:
+        - name: workflow_id
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Optional workflow id to stop (defaults to all workflows).
       responses:
         "200":
           description: Stop result
@@ -70,6 +84,20 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/StopSymphonyResult"
+      security: []
+
+  /symphony/workflows:
+    get:
+      summary: Symphony Workflows
+      description: List known Symphony workflows for the web UI.
+      operationId: getSymphonyWorkflows
+      responses:
+        "200":
+          description: Workflow list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SymphonyWorkflowsResponse"
       security: []
 
   /counter:
@@ -106,6 +134,9 @@ components:
           type: string
         symphony_running:
           type: boolean
+        symphony_active_workflow_id:
+          type: string
+          nullable: true
         symphony_workflow_path:
           type: string
           nullable: true
@@ -117,10 +148,18 @@ components:
           format: int32
           nullable: true
           description: The port of Symphony's debug HTTP server, if running.
+        symphony_workflows:
+          type: array
+          items:
+            $ref: "#/components/schemas/SymphonyWorkflow"
+          nullable: true
 
     StartSymphonyRequest:
       type: object
       properties:
+        workflow_id:
+          type: string
+          description: Optional workflow id (preferred when starting a known workflow).
         workflow_path:
           type: string
           description: Optional path to WORKFLOW.md. If omitted, server default is used.
@@ -136,6 +175,9 @@ components:
       properties:
         running:
           type: boolean
+        workflow_id:
+          type: string
+          nullable: true
         workflow_path:
           type: string
           nullable: true
@@ -146,6 +188,39 @@ components:
       properties:
         running:
           type: boolean
+        workflow_id:
+          type: string
+          nullable: true
+
+    SymphonyWorkflow:
+      type: object
+      required: [id, workflow_path, running]
+      properties:
+        id:
+          type: string
+        workflow_path:
+          type: string
+        running:
+          type: boolean
+        last_error:
+          type: string
+          nullable: true
+        http_port:
+          type: integer
+          format: int32
+          nullable: true
+
+    SymphonyWorkflowsResponse:
+      type: object
+      required: [workflows]
+      properties:
+        workflows:
+          type: array
+          items:
+            $ref: "#/components/schemas/SymphonyWorkflow"
+        active_workflow_id:
+          type: string
+          nullable: true
 
     SymphonySnapshot:
       type: object
