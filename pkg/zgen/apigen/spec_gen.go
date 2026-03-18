@@ -36,7 +36,10 @@ type Counter struct {
 
 // HealthResponse defines model for HealthResponse.
 type HealthResponse struct {
-	Status               string  `json:"status"`
+	Status string `json:"status"`
+
+	// SymphonyHttpPort The port of Symphony's debug HTTP server, if running.
+	SymphonyHttpPort     *int32  `json:"symphony_http_port"`
 	SymphonyLastError    *string `json:"symphony_last_error"`
 	SymphonyRunning      bool    `json:"symphony_running"`
 	SymphonyWorkflowPath *string `json:"symphony_workflow_path"`

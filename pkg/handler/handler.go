@@ -58,11 +58,18 @@ func (h *Handler) GetHealth(c *fiber.Ctx) error {
 		workflowPath = &p
 	}
 
+	var httpPort *int32
+	if health.HTTPPort != nil {
+		p := int32(*health.HTTPPort)
+		httpPort = &p
+	}
+
 	return c.JSON(apigen.HealthResponse{
 		Status:               "ok",
 		SymphonyRunning:      health.Running,
 		SymphonyWorkflowPath: workflowPath,
 		SymphonyLastError:    lastErr,
+		SymphonyHttpPort:     httpPort,
 	})
 }
 

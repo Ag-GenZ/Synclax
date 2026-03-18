@@ -16,6 +16,7 @@ type Health struct {
 	Running      bool
 	WorkflowPath string
 	LastError    error
+	HTTPPort     *int
 }
 
 type Manager struct {
@@ -63,10 +64,16 @@ func NewManager(anclaxApp *anclaxapp.Application, cfg *config.Config) (*Manager,
 func (m *Manager) Health() Health {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	running := m.orch != nil && m.cancel != nil && m.done != nil
+	var port *int
+	if running && m.httpPort != nil && *m.httpPort >= 0 {
+		port = m.httpPort
+	}
 	return Health{
-		Running:      m.orch != nil && m.cancel != nil && m.done != nil,
+		Running:      running,
 		WorkflowPath: m.workflowPath,
 		LastError:    m.lastErr,
+		HTTPPort:     port,
 	}
 }
 

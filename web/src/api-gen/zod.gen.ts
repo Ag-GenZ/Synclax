@@ -6,7 +6,8 @@ export const zHealthResponse = z.object({
     status: z.string(),
     symphony_running: z.boolean(),
     symphony_workflow_path: z.string().nullish(),
-    symphony_last_error: z.string().nullish()
+    symphony_last_error: z.string().nullish(),
+    symphony_http_port: z.int().min(-2147483648, { error: 'Invalid value: Expected int32 to be >= -2147483648' }).max(2147483647, { error: 'Invalid value: Expected int32 to be <= 2147483647' }).nullish()
 });
 
 export const zStartSymphonyRequest = z.object({

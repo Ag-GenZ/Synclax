@@ -112,6 +112,11 @@ components:
         symphony_last_error:
           type: string
           nullable: true
+        symphony_http_port:
+          type: integer
+          format: int32
+          nullable: true
+          description: The port of Symphony's debug HTTP server, if running.
 
     StartSymphonyRequest:
       type: object

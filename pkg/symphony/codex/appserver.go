@@ -14,6 +14,8 @@ import (
 	"time"
 )
 
+const nonInteractiveToolInputAnswer = "This is a non-interactive session. Operator input is unavailable."
+
 type AppServer struct {
 	command string
 
@@ -213,7 +215,7 @@ func (a *AppServer) StartSession(ctx context.Context, workspacePath string) (*Se
 		return nil, err
 	}
 
-	client := newRPCClient(proc, a.readTimeout, a.tools)
+	client := newRPCClient(proc, a.readTimeout, a.tools, isNeverApprovalPolicy(a.approvalPolicy))
 	if err := client.start(ctx); err != nil {
 		_ = proc.close()
 		return nil, err
@@ -226,6 +228,14 @@ func (a *AppServer) StartSession(ctx context.Context, workspacePath string) (*Se
 	}
 
 	return &Session{threadID: threadID, proc: proc, client: client}, nil
+}
+
+func isNeverApprovalPolicy(v any) bool {
+	s, ok := v.(string)
+	if !ok {
+		return false
+	}
+	return strings.TrimSpace(strings.ToLower(s)) == "never"
 }
 
 type TurnResult struct {
@@ -320,6 +330,7 @@ type rpcClient struct {
 	proc        *process
 	readTimeout time.Duration
 	tools       toolExecutor
+	autoApprove bool
 
 	mu        sync.Mutex
 	nextID    int
@@ -337,11 +348,12 @@ type rpcEnvelope struct {
 	Error  json.RawMessage `json:"error,omitempty"`
 }
 
-func newRPCClient(proc *process, readTimeout time.Duration, tools toolExecutor) *rpcClient {
+func newRPCClient(proc *process, readTimeout time.Duration, tools toolExecutor, autoApprove bool) *rpcClient {
 	return &rpcClient{
 		proc:        proc,
 		readTimeout: readTimeout,
 		tools:       tools,
+		autoApprove: autoApprove,
 		nextID:      1,
 		waiters:     map[int]chan rpcEnvelope{},
 		events:      make(chan rpcMessage, 256),
@@ -547,18 +559,48 @@ func (c *rpcClient) readLoop() {
 				}
 				c.events <- rpcMessage{method: eventName, payload: map[string]any{"tool": toolName}}
 				continue
+			case "item/tool/requestUserInput":
+				answers, decision, ok := toolRequestUserInputAnswers(payload, c.autoApprove)
+				if !ok {
+					answers, _, _ = toolRequestUserInputUnavailableAnswers(payload)
+					decision = "non_interactive"
+				}
+				_ = c.proc.writeJSON(map[string]any{
+					"id": id,
+					"result": map[string]any{
+						"answers": answers,
+					},
+				})
+				c.events <- rpcMessage{method: "tool_input_auto_answered", payload: map[string]any{"decision": decision}}
+				continue
 			default:
-				// Preserve legacy "auto approve everything" behavior when app-server emits approval requests.
-				// Symphony runs unattended by default; if the operator wants interactive approvals, they should
-				// choose a compatible Codex approval policy and extend this client accordingly.
-				if strings.Contains(strings.ToLower(env.Method), "approval") {
+				// Approval requests (auto-approve when approvalPolicy == "never").
+				if strings.Contains(strings.ToLower(env.Method), "approval") || strings.Contains(env.Method, "requestApproval") {
+					decision := "reject"
+					approved := false
+					if c.autoApprove {
+						approved = true
+						if strings.Contains(env.Method, "requestApproval") {
+							decision = "acceptForSession"
+						} else {
+							decision = "approved_for_session"
+						}
+					}
 					_ = c.proc.writeJSON(map[string]any{
 						"id": id,
 						"result": map[string]any{
-							"approved": true,
+							"approved":  approved,
+							"decision":  decision,
+							"auto":      c.autoApprove,
+							"toolMode":  "non_interactive",
+							"requested": env.Method,
 						},
 					})
-					c.events <- rpcMessage{method: "approval_auto_approved", payload: map[string]any{"method": env.Method}}
+					if approved {
+						c.events <- rpcMessage{method: "approval_auto_approved", payload: map[string]any{"method": env.Method, "decision": decision}}
+					} else {
+						c.events <- rpcMessage{method: "approval_required", payload: map[string]any{"method": env.Method}}
+					}
 					continue
 				}
 				if strings.Contains(env.Method, "tool") {
@@ -598,6 +640,119 @@ func toolCallArguments(params map[string]any) any {
 		return v
 	}
 	return map[string]any{}
+}
+
+func toolRequestUserInputAnswers(params map[string]any, autoApprove bool) (map[string]any, string, bool) {
+	if !autoApprove {
+		return toolRequestUserInputUnavailableAnswers(params)
+	}
+
+	questions := toolRequestUserInputQuestions(params)
+	if len(questions) == 0 {
+		return nil, "", false
+	}
+
+	answers := map[string]any{}
+	for _, qAny := range questions {
+		q, ok := qAny.(map[string]any)
+		if !ok {
+			return nil, "", false
+		}
+		qid, _ := q["id"].(string)
+		qid = strings.TrimSpace(qid)
+		if qid == "" {
+			return nil, "", false
+		}
+
+		options, _ := q["options"].([]any)
+		label := approvalOptionLabel(options)
+		if label == "" {
+			return nil, "", false
+		}
+
+		answers[qid] = map[string]any{
+			"answers": []any{label},
+		}
+	}
+
+	if len(answers) == 0 {
+		return nil, "", false
+	}
+	return answers, "Approve this Session", true
+}
+
+func toolRequestUserInputUnavailableAnswers(params map[string]any) (map[string]any, string, bool) {
+	questions := toolRequestUserInputQuestions(params)
+	if len(questions) == 0 {
+		return nil, "", false
+	}
+
+	answers := map[string]any{}
+	for _, qAny := range questions {
+		q, ok := qAny.(map[string]any)
+		if !ok {
+			return nil, "", false
+		}
+		qid, _ := q["id"].(string)
+		qid = strings.TrimSpace(qid)
+		if qid == "" {
+			return nil, "", false
+		}
+		answers[qid] = map[string]any{
+			"answers": []any{nonInteractiveToolInputAnswer},
+		}
+	}
+
+	if len(answers) == 0 {
+		return nil, "", false
+	}
+	return answers, nonInteractiveToolInputAnswer, true
+}
+
+func toolRequestUserInputQuestions(params map[string]any) []any {
+	if params == nil {
+		return nil
+	}
+	if qs, ok := params["questions"].([]any); ok && len(qs) > 0 {
+		return qs
+	}
+	// Some protocol variants nest under params.params.
+	if inner, ok := params["params"].(map[string]any); ok && inner != nil {
+		if qs, ok := inner["questions"].([]any); ok && len(qs) > 0 {
+			return qs
+		}
+	}
+	return nil
+}
+
+func approvalOptionLabel(options []any) string {
+	var labels []string
+	for _, optAny := range options {
+		opt, ok := optAny.(map[string]any)
+		if !ok {
+			continue
+		}
+		if s, ok := opt["label"].(string); ok {
+			s = strings.TrimSpace(s)
+			if s != "" {
+				labels = append(labels, s)
+			}
+		}
+	}
+	for _, preferred := range []string{"Approve this Session", "Approve Once"} {
+		for _, l := range labels {
+			if l == preferred {
+				return l
+			}
+		}
+	}
+	for _, l := range labels {
+		n := strings.ToLower(strings.TrimSpace(l))
+		if strings.HasPrefix(n, "approve") || strings.HasPrefix(n, "allow") {
+			return l
+		}
+	}
+	return ""
 }
 
 func parseNumericID(raw json.RawMessage) (int, bool) {

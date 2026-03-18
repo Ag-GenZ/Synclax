@@ -9,6 +9,10 @@ export type HealthResponse = {
     symphony_running: boolean;
     symphony_workflow_path?: string | null;
     symphony_last_error?: string | null;
+    /**
+     * The port of Symphony's debug HTTP server, if running.
+     */
+    symphony_http_port?: number | null;
 };
 
 export type StartSymphonyRequest = {

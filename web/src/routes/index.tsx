@@ -7,6 +7,7 @@ import {
   ActivityIcon,
   AlertCircleIcon,
   BarChart3Icon,
+  BugIcon,
   CheckCircle2Icon,
   CircleDotIcon,
   ClockIcon,
@@ -69,6 +70,7 @@ import { StatTile } from "#/components/symphony/StatTile";
 import { TokenUsage } from "#/components/symphony/TokenUsage";
 import { StartDialog } from "#/components/symphony/StartDialog";
 import { StopDialog } from "#/components/symphony/StopDialog";
+import { DebugPanel } from "#/components/symphony/DebugPanel";
 import { collectActivity, fmtAgo, fmtTokens, fmtSeconds } from "#/components/symphony/utils";
 
 export const Route = createFileRoute("/")({ component: SymphonyDashboard });
@@ -126,6 +128,7 @@ function SymphonyDashboard() {
   const handleRefresh = useCallback(() => qc.invalidateQueries(), [qc]);
 
   const isRunning = health?.symphony_running ?? false;
+  const debugPort = health?.symphony_http_port;
   const runningCount = snapshot?.running.length ?? 0;
   const retryingCount = snapshot?.retrying.length ?? 0;
   const completedCount = snapshot?.completed?.length ?? 0;
@@ -401,6 +404,15 @@ function SymphonyDashboard() {
                       Rate Limits
                     </TabsTab>
                   )}
+                  <TabsTab value="debug" className="gap-1.5">
+                    <BugIcon className="size-3.5" />
+                    Debug
+                    {debugPort && (
+                      <Badge variant="outline" size="sm" className="ml-1 tabular-nums font-mono">
+                        :{debugPort}
+                      </Badge>
+                    )}
+                  </TabsTab>
                 </TabsList>
 
                 {/* Running */}
@@ -598,6 +610,11 @@ function SymphonyDashboard() {
                     </Card>
                   </TabsPanel>
                 )}
+
+                {/* Debug */}
+                <TabsPanel value="debug" className="mt-4">
+                  <DebugPanel port={debugPort} />
+                </TabsPanel>
               </Tabs>
             </div>
           </ScrollArea>

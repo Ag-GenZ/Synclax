@@ -639,6 +639,8 @@ func (o *Orchestrator) runWorker(parent context.Context, w attemptRunner, issue 
 	o.running[issue.ID] = entry
 	o.mu.Unlock()
 
+	log.Printf("symphony attempt_start issue_id=%s issue_identifier=%s attempt=%v", issue.ID, issue.Identifier, attemptValue(attempt))
+
 	res, err := w.RunAttempt(ctx, issue, attempt, func(upd agent.Update) {
 		o.onWorkerUpdate(issue.ID, upd)
 	})
@@ -646,6 +648,31 @@ func (o *Orchestrator) runWorker(parent context.Context, w attemptRunner, issue 
 	o.mu.Lock()
 	delete(o.running, issue.ID)
 	o.mu.Unlock()
+
+	status := "ok"
+	if err != nil {
+		status = "error"
+	}
+	sessionID := strings.TrimSpace(entry.Live.SessionID)
+	threadID := strings.TrimSpace(entry.Live.ThreadID)
+	turnID := strings.TrimSpace(entry.Live.TurnID)
+	if sessionID == "" && threadID != "" && turnID != "" {
+		sessionID = threadID + "-" + turnID
+	}
+
+	log.Printf(
+		"symphony attempt_end status=%s issue_id=%s issue_identifier=%s session_id=%s thread_id=%s turn_id=%s turns=%d input_tokens=%d output_tokens=%d total_tokens=%d",
+		status,
+		entry.IssueID,
+		entry.Identifier,
+		sessionID,
+		threadID,
+		turnID,
+		res.TurnsRun,
+		res.CodexInputTokens,
+		res.CodexOutputTokens,
+		res.CodexTotalTokens,
+	)
 
 	o.onWorkerExit(parent, entry, res, err)
 }
@@ -740,6 +767,9 @@ func (o *Orchestrator) onWorkerUpdate(issueID string, upd agent.Update) {
 	}
 	if turnID, ok := upd.Payload["turn_id"].(string); ok && strings.TrimSpace(turnID) != "" {
 		r.Live.TurnID = turnID
+	}
+	if strings.TrimSpace(r.Live.ThreadID) != "" && strings.TrimSpace(r.Live.TurnID) != "" {
+		r.Live.SessionID = strings.TrimSpace(r.Live.ThreadID) + "-" + strings.TrimSpace(r.Live.TurnID)
 	}
 	if pid := intPtrFromAny(upd.Payload["codex_app_server_pid"]); pid != nil {
 		r.Live.CodexAppServerPID = pid
@@ -1333,4 +1363,11 @@ func intPtrFromAny(v any) *int {
 		}
 	}
 	return nil
+}
+
+func attemptValue(a *int) any {
+	if a == nil {
+		return nil
+	}
+	return *a
 }

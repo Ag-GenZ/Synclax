@@ -59,6 +59,14 @@ Requirements:
 
 This is what the repo-level `.codex/skills/linear` skill expects.
 
+## Non-interactive sessions
+
+Symphony runs Codex turns in a non-interactive mode by default. If the app-server requests
+operator input (for example via `item/tool/requestUserInput`), Symphony will auto-answer:
+
+- When `codex.approval_policy: never`, it prefers an “Approve …” option when present.
+- Otherwise, it replies with a fixed “operator input is unavailable” answer.
+
 ### `polling`
 
 ```yaml
