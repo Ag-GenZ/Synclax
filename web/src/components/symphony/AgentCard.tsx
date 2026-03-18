@@ -7,15 +7,26 @@ import {
   GitBranchIcon,
   TagIcon,
   TimerIcon,
+  CopyIcon,
+  MoreHorizontalIcon,
 } from "lucide-react";
 import type { LiveEvent, SymphonyRunningEntry } from "#/api-gen/types.gen";
 import { Card, CardHeader, CardPanel } from "#/components/ui/card";
 import { Badge } from "#/components/ui/badge";
 import { Collapsible, CollapsibleTrigger, CollapsiblePanel } from "#/components/ui/collapsible";
-import { Tooltip, TooltipTrigger, TooltipPopup } from "#/components/ui/tooltip";
+import { Progress, ProgressTrack, ProgressIndicator } from "#/components/ui/progress";
+import {
+  Menu,
+  MenuTrigger,
+  MenuPopup,
+  MenuItem,
+  MenuSeparator,
+} from "#/components/ui/menu";
+import { Avatar, AvatarFallback } from "#/components/ui/avatar";
+import { Button } from "#/components/ui/button";
+import { toastManager } from "#/components/ui/toast";
 import { cn } from "#/lib/utils";
-import { fmtAgo, fmtTokens } from "./utils";
-import { PhaseBar } from "./PhaseBar";
+import { fmtAgo, fmtTokens, PHASES, PHASE_LABELS, type Phase } from "./utils";
 
 type StreamBlock = { event: string; text: string };
 
@@ -48,6 +59,9 @@ export const AgentCard = memo(function AgentCard({ entry }: { entry: SymphonyRun
   const blocks = buildStreamBlocks(live.event_log ?? []);
   const hasLiveEvent = blocks.length > 0 || live.last_codex_message || live.last_codex_event;
 
+  const phaseIdx = PHASES.indexOf(phase as Phase);
+  const phaseProgress = phaseIdx >= 0 ? ((phaseIdx + 1) / PHASES.length) * 100 : 0;
+
   useEffect(() => {
     if (streamRef.current) {
       streamRef.current.scrollTop = streamRef.current.scrollHeight;
@@ -63,14 +77,27 @@ export const AgentCard = memo(function AgentCard({ entry }: { entry: SymphonyRun
           ? ("outline" as const)
           : ("secondary" as const);
 
+  const initials = issue.identifier.replace(/[^A-Z0-9]/gi, "").slice(0, 2).toUpperCase();
+
+  const handleCopyId = () => {
+    navigator.clipboard.writeText(issue.identifier);
+    toastManager.add({ title: "Copied identifier", type: "success" });
+  };
+
   return (
-    <Card className="overflow-hidden">
-      <CardHeader className="px-4 pt-4 pb-3 space-y-2.5">
-        {/* ID + badges row */}
-        <div className="flex items-start gap-2">
+    <Card className="overflow-hidden group/card">
+      <CardHeader className="px-4 pt-4 pb-3 space-y-3">
+        {/* Top row: avatar + ID + badges + menu */}
+        <div className="flex items-start gap-3">
+          <Avatar className="size-8 shrink-0 text-[10px]">
+            <AvatarFallback className="bg-info/10 text-info-foreground font-bold">
+              {initials}
+            </AvatarFallback>
+          </Avatar>
+
           <div className="flex-1 min-w-0">
-            <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
-              <span className="font-mono text-[11px] font-bold text-[var(--lagoon-deep)]">
+            <div className="flex flex-wrap items-center gap-1.5 mb-1">
+              <span className="font-mono text-[11px] font-bold text-info-foreground">
                 {issue.identifier}
               </span>
               <Badge variant={stateVariant} size="sm">
@@ -78,7 +105,7 @@ export const AgentCard = memo(function AgentCard({ entry }: { entry: SymphonyRun
               </Badge>
               {attempt != null && (
                 <Badge variant="outline" size="sm">
-                  attempt #{attempt}
+                  #{attempt}
                 </Badge>
               )}
               {issue.labels?.map((l) => (
@@ -90,25 +117,61 @@ export const AgentCard = memo(function AgentCard({ entry }: { entry: SymphonyRun
             </div>
             <p className="text-[13px] font-semibold leading-snug line-clamp-2">{issue.title}</p>
           </div>
-          {issue.url && (
-            <Tooltip>
-              <TooltipTrigger>
-                <a
-                  href={issue.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-0.5 text-muted-foreground/40 hover:text-foreground transition-colors"
+
+          <Menu>
+            <MenuTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="size-7 p-0 opacity-0 group-hover/card:opacity-100 transition-opacity"
+                >
+                  <MoreHorizontalIcon className="size-3.5" />
+                </Button>
+              }
+            />
+            <MenuPopup align="end">
+              <MenuItem onSelect={handleCopyId}>
+                <CopyIcon className="size-3.5" />
+                Copy identifier
+              </MenuItem>
+              {issue.url && (
+                <MenuItem
+                  onSelect={() => window.open(issue.url!, "_blank", "noopener,noreferrer")}
                 >
                   <ExternalLinkIcon className="size-3.5" />
-                </a>
-              </TooltipTrigger>
-              <TooltipPopup>Open in Linear</TooltipPopup>
-            </Tooltip>
-          )}
+                  Open in Linear
+                </MenuItem>
+              )}
+              <MenuSeparator />
+              <MenuItem
+                onSelect={() =>
+                  navigator.clipboard.writeText(workspace_path).then(() =>
+                    toastManager.add({ title: "Copied workspace path", type: "success" }),
+                  )
+                }
+              >
+                <FolderIcon className="size-3.5" />
+                Copy workspace path
+              </MenuItem>
+            </MenuPopup>
+          </Menu>
         </div>
 
-        {/* Phase progress */}
-        <PhaseBar phase={phase} />
+        {/* Phase progress bar */}
+        <div className="space-y-1.5">
+          <Progress value={phaseProgress}>
+            <ProgressTrack className="h-1.5">
+              <ProgressIndicator
+                className="bg-info transition-all duration-500"
+                style={{ width: `${phaseProgress}%` }}
+              />
+            </ProgressTrack>
+          </Progress>
+          <div className="font-mono text-[10px] text-muted-foreground/60">
+            {PHASE_LABELS[phase as Phase] ?? phase}
+          </div>
+        </div>
 
         {/* Inline metrics */}
         <div className="flex items-center gap-2.5 text-[11px] text-muted-foreground flex-wrap">
@@ -136,7 +199,6 @@ export const AgentCard = memo(function AgentCard({ entry }: { entry: SymphonyRun
         {/* Terminal stream */}
         {hasLiveEvent && (
           <div className="rounded-lg border border-border/40 overflow-hidden">
-            {/* macOS-style title bar */}
             <div className="flex items-center gap-2 px-3 py-1.5 bg-muted/30 border-b border-border/30">
               <div className="flex items-center gap-1">
                 <div className="size-2 rounded-full bg-destructive/40" />
@@ -152,7 +214,6 @@ export const AgentCard = memo(function AgentCard({ entry }: { entry: SymphonyRun
                 </span>
               )}
             </div>
-            {/* Stream content */}
             <div
               ref={streamRef}
               className="bg-black/[0.03] dark:bg-black/30 p-3 max-h-44 overflow-y-auto scroll-smooth space-y-1"

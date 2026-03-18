@@ -1,5 +1,5 @@
-import { useState, useCallback } from "react";
-import { PlayCircleIcon } from "lucide-react";
+import { useEffect, useState, useCallback } from "react";
+import { PlayCircleIcon, FolderOpenIcon } from "lucide-react";
 import { Button } from "#/components/ui/button";
 import {
   Dialog,
@@ -10,25 +10,70 @@ import {
   DialogDescription,
   DialogClose,
 } from "#/components/ui/dialog";
-import { Input } from "#/components/ui/input";
-import { Label } from "#/components/ui/label";
+import { Form } from "#/components/ui/form";
+import { Field, FieldLabel, FieldDescription } from "#/components/ui/field";
+import { Fieldset, FieldsetLegend } from "#/components/ui/fieldset";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "#/components/ui/input-group";
+import {
+  NumberField,
+  NumberFieldGroup,
+  NumberFieldDecrement,
+  NumberFieldIncrement,
+  NumberFieldInput,
+} from "#/components/ui/number-field";
+import { Separator } from "#/components/ui/separator";
 import { Spinner } from "#/components/ui/spinner";
+import { Badge } from "#/components/ui/badge";
 
 export function StartDialog({
   onStart,
   isPending,
+  defaultWorkflowPath,
 }: {
   onStart: (path?: string, port?: number) => void;
   isPending: boolean;
+  defaultWorkflowPath: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const [path, setPath] = useState("");
-  const [port, setPort] = useState("");
+  const [port, setPort] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    if (typeof window === "undefined") return;
+
+    if (!path.trim()) {
+      const storedPath = window.localStorage.getItem("symphony.start.workflow_path") ?? "";
+      const next = storedPath.trim() || defaultWorkflowPath?.trim() || "";
+      if (next) setPath(next);
+    }
+
+    if (port == null) {
+      const storedPort = window.localStorage.getItem("symphony.start.http_port") ?? "";
+      const next = storedPort.trim();
+      if (next) setPort(parseInt(next, 10));
+    }
+  }, [open, path, port, defaultWorkflowPath]);
 
   const submit = useCallback(
     (e: React.FormEvent) => {
       e.preventDefault();
-      onStart(path.trim() || undefined, port.trim() ? parseInt(port.trim(), 10) : undefined);
+      const pathValue = path.trim();
+
+      if (typeof window !== "undefined") {
+        if (pathValue) {
+          window.localStorage.setItem("symphony.start.workflow_path", pathValue);
+        } else {
+          window.localStorage.removeItem("symphony.start.workflow_path");
+        }
+        if (port != null) {
+          window.localStorage.setItem("symphony.start.http_port", String(port));
+        } else {
+          window.localStorage.removeItem("symphony.start.http_port");
+        }
+      }
+
+      onStart(pathValue || undefined, port ?? undefined);
       setOpen(false);
     },
     [onStart, path, port],
@@ -40,40 +85,73 @@ export function StartDialog({
         render={
           <Button disabled={isPending} className="gap-2">
             {isPending ? <Spinner className="size-4" /> : <PlayCircleIcon className="size-4" />}
-            Start Symphony
+            Start
           </Button>
         }
       />
       <DialogPopup className="w-full max-w-md" showCloseButton={false}>
         <DialogHeader>
-          <DialogTitle>Start Symphony</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            <PlayCircleIcon className="size-4 text-success-foreground" />
+            Start Workflow
+          </DialogTitle>
           <DialogDescription>
-            Launch the orchestrator. Both fields are optional — leave blank to use server defaults.
+            Launch a workflow. Leave blank to use{" "}
+            {defaultWorkflowPath ? (
+              <Badge variant="secondary" size="sm" className="font-mono">
+                {defaultWorkflowPath}
+              </Badge>
+            ) : (
+              "server defaults"
+            )}
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={submit} className="space-y-4 px-6 pb-6">
-          <div className="space-y-1.5">
-            <Label htmlFor="wf-path">Workflow path</Label>
-            <Input
-              id="wf-path"
-              placeholder="./WORKFLOW.md"
-              value={path}
-              onChange={(e) => setPath(e.target.value)}
-              className="font-mono text-sm"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="dbg-port">Debug HTTP port</Label>
-            <Input
-              id="dbg-port"
-              type="number"
-              placeholder="e.g. 8089  ·  -1 to disable"
-              value={port}
-              onChange={(e) => setPort(e.target.value)}
-              className="font-mono text-sm"
-            />
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
+
+        <Form onSubmit={submit} className="px-6 pb-6">
+          <Fieldset className="space-y-4">
+            <FieldsetLegend className="sr-only">Workflow Configuration</FieldsetLegend>
+
+            <Field>
+              <FieldLabel htmlFor="wf-path">Workflow path</FieldLabel>
+              <FieldDescription>Path to the workflow definition file</FieldDescription>
+              <InputGroup className="mt-1.5">
+                <InputGroupAddon align="inline-start">
+                  <FolderOpenIcon className="size-3.5 text-muted-foreground" />
+                </InputGroupAddon>
+                <InputGroupInput
+                  id="wf-path"
+                  name="workflow_path"
+                  autoComplete="off"
+                  placeholder="./WORKFLOW.md"
+                  value={path}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPath(e.target.value)}
+                  className="font-mono text-sm"
+                />
+              </InputGroup>
+            </Field>
+
+            <Separator />
+
+            <Field>
+              <FieldLabel>Debug HTTP port</FieldLabel>
+              <FieldDescription>Set to -1 to disable the debug server</FieldDescription>
+              <NumberField
+                value={port ?? undefined}
+                onValueChange={(val) => setPort(val ?? null)}
+                min={-1}
+                max={65535}
+                size="sm"
+              >
+                <NumberFieldGroup className="mt-1.5">
+                  <NumberFieldDecrement />
+                  <NumberFieldInput placeholder="8089" />
+                  <NumberFieldIncrement />
+                </NumberFieldGroup>
+              </NumberField>
+            </Field>
+          </Fieldset>
+
+          <div className="flex justify-end gap-2 pt-4 mt-2 border-t">
             <DialogClose
               render={
                 <Button variant="ghost" type="button">
@@ -81,12 +159,12 @@ export function StartDialog({
                 </Button>
               }
             />
-            <Button type="submit">
+            <Button type="submit" className="gap-2">
               <PlayCircleIcon className="size-4" />
-              Start
+              Start Workflow
             </Button>
           </div>
-        </form>
+        </Form>
       </DialogPopup>
     </Dialog>
   );

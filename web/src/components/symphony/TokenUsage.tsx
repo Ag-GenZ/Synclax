@@ -1,11 +1,14 @@
 import { memo } from "react";
 import type { CodexTotals } from "#/api-gen/types.gen";
+import { Meter, MeterTrack, MeterIndicator, MeterLabel, MeterValue } from "#/components/ui/meter";
+import { Progress, ProgressTrack, ProgressIndicator } from "#/components/ui/progress";
 import { cn } from "#/lib/utils";
 import { fmtTokens, fmtSeconds } from "./utils";
 
 export const TokenUsage = memo(function TokenUsage({ totals }: { totals: CodexTotals }) {
   const inputPct =
     totals.total_tokens > 0 ? (totals.input_tokens / totals.total_tokens) * 100 : 50;
+  const outputPct = 100 - inputPct;
 
   return (
     <div className="space-y-6">
@@ -22,15 +25,20 @@ export const TokenUsage = memo(function TokenUsage({ totals }: { totals: CodexTo
         </p>
       </div>
 
-      {/* Stacked proportional bar */}
+      {/* Stacked proportional bar using Progress */}
       <div className="space-y-2">
-        <div className="flex h-2.5 rounded-full overflow-hidden bg-muted/40 gap-px">
-          <div
-            className="bg-info/60 rounded-l-full transition-[width] duration-700"
-            style={{ width: `${inputPct}%` }}
-          />
-          <div className="bg-success/60 rounded-r-full flex-1 transition-[width] duration-700" />
-        </div>
+        <Progress value={inputPct}>
+          <ProgressTrack className="h-3 rounded-full overflow-hidden bg-muted/40 flex gap-px">
+            <ProgressIndicator
+              className="bg-info/60 rounded-l-full transition-[width] duration-700"
+              style={{ width: `${inputPct}%` }}
+            />
+            <ProgressIndicator
+              className="bg-success/60 rounded-r-full transition-[width] duration-700"
+              style={{ width: `${outputPct}%` }}
+            />
+          </ProgressTrack>
+        </Progress>
         <div className="flex items-center justify-between text-[11px]">
           <div className="flex items-center gap-2">
             <div className="size-2 rounded-full bg-info/60 shrink-0" />
@@ -51,6 +59,37 @@ export const TokenUsage = memo(function TokenUsage({ totals }: { totals: CodexTo
             <div className="size-2 rounded-full bg-success/60 shrink-0" />
           </div>
         </div>
+      </div>
+
+      {/* Meter gauges */}
+      <div className="grid grid-cols-2 gap-4">
+        <Meter value={inputPct} min={0} max={100}>
+          <div className="flex items-center justify-between mb-1.5">
+            <MeterLabel className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/60">
+              Input Ratio
+            </MeterLabel>
+            <MeterValue className="text-xs font-bold tabular-nums text-info-foreground">
+              {() => `${inputPct.toFixed(1)}%`}
+            </MeterValue>
+          </div>
+          <MeterTrack className="h-2 rounded-full">
+            <MeterIndicator className="bg-info/60 rounded-full" />
+          </MeterTrack>
+        </Meter>
+
+        <Meter value={outputPct} min={0} max={100}>
+          <div className="flex items-center justify-between mb-1.5">
+            <MeterLabel className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/60">
+              Output Ratio
+            </MeterLabel>
+            <MeterValue className="text-xs font-bold tabular-nums text-success-foreground">
+              {() => `${outputPct.toFixed(1)}%`}
+            </MeterValue>
+          </div>
+          <MeterTrack className="h-2 rounded-full">
+            <MeterIndicator className="bg-success/60 rounded-full" />
+          </MeterTrack>
+        </Meter>
       </div>
 
       {/* Stats grid */}

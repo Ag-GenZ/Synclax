@@ -10,10 +10,10 @@ export const ActivityRow = memo(function ActivityRow({ entry }: { entry: Activit
   return (
     <div className="flex items-center gap-3 px-4 py-2 hover:bg-muted/30 transition-colors border-b border-border/30 last:border-0 group">
       {/* Pulse dot */}
-      <div className="size-1.5 rounded-full bg-[var(--lagoon)]/60 shrink-0" />
+      <div className="size-1.5 rounded-full bg-info/60 shrink-0" />
 
       {/* Issue ID */}
-      <span className="font-mono text-[11px] font-bold text-[var(--lagoon-deep)] shrink-0 w-14 truncate">
+      <span className="font-mono text-[11px] font-bold text-info-foreground shrink-0 w-14 truncate">
         {entry.identifier}
       </span>
 

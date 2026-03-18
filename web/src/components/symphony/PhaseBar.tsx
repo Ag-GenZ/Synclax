@@ -17,7 +17,7 @@ export const PhaseBar = memo(function PhaseBar({ phase }: { phase: string }) {
                   i < idx
                     ? "bg-success/50"
                     : i === idx
-                      ? "bg-[var(--lagoon)] animate-pulse"
+                      ? "bg-info animate-pulse"
                       : "bg-border/50",
                 )}
               />

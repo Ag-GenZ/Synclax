@@ -32,7 +32,7 @@ export const CompletedRow = memo(function CompletedRow({
       {/* Content */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5 mb-0.5">
-          <span className="font-mono text-[11px] font-bold text-[var(--lagoon-deep)]">
+          <span className="font-mono text-[11px] font-bold text-info-foreground">
             {issue.identifier}
           </span>
           <Badge variant={v} size="sm">
