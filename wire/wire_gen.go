@@ -36,7 +36,7 @@ func InitApp() (*app.App, error) {
 	if err != nil {
 		return nil, err
 	}
-	manager, err := control.NewManager(application, configConfig)
+	manager, err := control.NewManager(application, configConfig, modelInterface)
 	if err != nil {
 		return nil, err
 	}

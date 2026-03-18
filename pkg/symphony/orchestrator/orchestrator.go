@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -29,6 +30,7 @@ import (
 type Options struct {
 	WorkflowPath string
 	PortOverride *int
+	StatsStore   StatsStore
 }
 
 type Orchestrator struct {
@@ -52,6 +54,7 @@ type Orchestrator struct {
 	completedHistory []CompletedEntry
 
 	stateDir string
+	stats    StatsStore
 
 	codexTotals     CodexTotals
 	codexRateLimits map[string]any
@@ -61,6 +64,11 @@ type Orchestrator struct {
 
 type attemptRunner interface {
 	RunAttempt(ctx context.Context, issue domain.Issue, attempt *int, onUpdate func(agent.Update)) (agent.Result, error)
+}
+
+type StatsStore interface {
+	Load(ctx context.Context, maxAttempts int) (CodexTotals, map[string]any, []CompletedEntry, error)
+	Record(ctx context.Context, totals CodexTotals, rateLimits map[string]any, entry CompletedEntry) error
 }
 
 func (o *Orchestrator) Snapshot() map[string]any {
@@ -86,6 +94,7 @@ func New(opts Options) (*Orchestrator, error) {
 		claimed:   map[string]struct{}{},
 		retries:   map[string]*RetryEntry{},
 		completed: map[string]struct{}{},
+		stats:     opts.StatsStore,
 	}
 	o.newRunner = func(rt *runtime.EffectiveRuntime, tr tracker.Client, ws *workspace.Manager, codexSrv *codex.AppServer) attemptRunner {
 		return &agent.Worker{
@@ -171,6 +180,21 @@ func (o *Orchestrator) statePathLocked(name string) string {
 }
 
 func (o *Orchestrator) loadPersistedLocked() {
+	if o.stats != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if totals, rl, attempts, err := o.stats.Load(ctx, 200); err == nil {
+			o.codexTotals = totals
+			if rl != nil {
+				o.codexRateLimits = rl
+			}
+			if attempts != nil {
+				o.completedHistory = attempts
+			}
+			return
+		}
+	}
+
 	// totals
 	totalsPath := o.statePathLocked("totals.json")
 	if totalsPath != "" {
@@ -275,6 +299,20 @@ func (o *Orchestrator) appendAttemptBestEffort(entry CompletedEntry) {
 		return
 	}
 	_, _ = f.Write(append(b, '\n'))
+}
+
+func (o *Orchestrator) recordAttemptBestEffort(totals CodexTotals, rateLimits map[string]any, entry CompletedEntry) {
+	if o == nil {
+		return
+	}
+	if o.stats != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_ = o.stats.Record(ctx, totals, rateLimits, entry)
+		return
+	}
+	o.appendAttemptBestEffort(entry)
+	o.persistStateBestEffort(totals, rateLimits)
 }
 
 func (o *Orchestrator) getPollInterval() time.Duration {
@@ -855,6 +893,45 @@ func (o *Orchestrator) onWorkerUpdate(issueID string, upd agent.Update) {
 
 	// Some events send tokens on the top-level payload.
 	applyUsage(upd.Payload)
+
+	// Some protocols nest usage blocks (e.g. payload.response.usage, payload.metrics.tokenUsage).
+	// Walk nested maps/slices and apply usage wherever we find it.
+	type node struct {
+		v     any
+		depth int
+	}
+	queue := []node{{v: upd.Payload, depth: 0}}
+	seen := 0
+	for len(queue) > 0 && seen < 250 {
+		n := queue[0]
+		queue = queue[1:]
+		seen++
+		if n.v == nil || n.depth > 6 {
+			continue
+		}
+		if m, ok := n.v.(map[string]any); ok {
+			if usage, ok := m["usage"].(map[string]any); ok {
+				applyUsage(usage)
+			}
+			if usage, ok := m["tokenUsage"].(map[string]any); ok {
+				applyUsage(usage)
+			}
+			if usage, ok := m["token_usage"].(map[string]any); ok {
+				applyUsage(usage)
+			}
+			applyUsage(m)
+			for _, v := range m {
+				queue = append(queue, node{v: v, depth: n.depth + 1})
+			}
+			continue
+		}
+		if xs, ok := n.v.([]any); ok {
+			for _, v := range xs {
+				queue = append(queue, node{v: v, depth: n.depth + 1})
+			}
+			continue
+		}
+	}
 }
 
 func (o *Orchestrator) onWorkerExit(ctx context.Context, entry *RunningEntry, res agent.Result, err error) {
@@ -943,8 +1020,7 @@ func (o *Orchestrator) onWorkerExit(ctx context.Context, entry *RunningEntry, re
 
 	persistBestEffort := func(totals CodexTotals, rateLimits map[string]any, c CompletedEntry) {
 		go func() {
-			o.appendAttemptBestEffort(c)
-			o.persistStateBestEffort(totals, rateLimits)
+			o.recordAttemptBestEffort(totals, rateLimits, c)
 		}()
 	}
 
@@ -973,7 +1049,6 @@ func (o *Orchestrator) onWorkerExit(ctx context.Context, entry *RunningEntry, re
 		if len(o.completedHistory) > 200 {
 			o.completedHistory = o.completedHistory[len(o.completedHistory)-200:]
 		}
-		o.codexTotals.SecondsRunning += duration
 		o.codexTotals.InputTokens += res.CodexInputTokens
 		o.codexTotals.OutputTokens += res.CodexOutputTokens
 		o.codexTotals.TotalTokens += res.CodexTotalTokens
@@ -1001,7 +1076,6 @@ func (o *Orchestrator) onWorkerExit(ctx context.Context, entry *RunningEntry, re
 	if len(o.completedHistory) > 200 {
 		o.completedHistory = o.completedHistory[len(o.completedHistory)-200:]
 	}
-	o.codexTotals.SecondsRunning += duration
 	o.codexTotals.InputTokens += res.CodexInputTokens
 	o.codexTotals.OutputTokens += res.CodexOutputTokens
 	o.codexTotals.TotalTokens += res.CodexTotalTokens
@@ -1327,6 +1401,17 @@ func intFromAny(v any) (int, bool) {
 	case json.Number:
 		if n, err := t.Int64(); err == nil {
 			return int(n), true
+		}
+	case string:
+		s := strings.TrimSpace(t)
+		if s == "" {
+			return 0, false
+		}
+		if n, err := strconv.ParseInt(s, 10, 64); err == nil {
+			return int(n), true
+		}
+		if f, err := strconv.ParseFloat(s, 64); err == nil {
+			return int(f), true
 		}
 	}
 	return 0, false

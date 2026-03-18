@@ -6,11 +6,17 @@ package querier
 
 import (
 	"context"
+	"encoding/json"
 )
 
 type Querier interface {
 	GetCounter(ctx context.Context) (*Counter, error)
 	IncrementCounter(ctx context.Context) error
+	GetSymphonyState(ctx context.Context) (*SymphonyState, error)
+	InsertSymphonyCompletedAttempt(ctx context.Context, entry json.RawMessage) error
+	ListSymphonyCompletedAttempts(ctx context.Context, limit int32) ([]ListSymphonyCompletedAttemptsRow, error)
+	PruneSymphonyCompletedAttempts(ctx context.Context, keep int32) error
+	UpsertSymphonyState(ctx context.Context, arg UpsertSymphonyStateParams) error
 }
 
 var _ Querier = (*Queries)(nil)

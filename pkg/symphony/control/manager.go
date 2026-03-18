@@ -6,10 +6,12 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	anclaxapp "github.com/cloudcarver/anclax/pkg/app"
 	"github.com/wibus-wee/synclax/pkg/config"
 	"github.com/wibus-wee/synclax/pkg/symphony/orchestrator"
+	"github.com/wibus-wee/synclax/pkg/zcore/model"
 )
 
 type Health struct {
@@ -25,6 +27,9 @@ type Manager struct {
 	workflowPath string
 	httpPort     *int
 
+	startedAt time.Time
+	stats     orchestrator.StatsStore
+
 	orch   *orchestrator.Orchestrator
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -32,7 +37,7 @@ type Manager struct {
 	lastErr error
 }
 
-func NewManager(anclaxApp *anclaxapp.Application, cfg *config.Config) (*Manager, error) {
+func NewManager(anclaxApp *anclaxapp.Application, cfg *config.Config, mdl model.ModelInterface) (*Manager, error) {
 	if cfg == nil {
 		return nil, errors.New("nil config")
 	}
@@ -47,18 +52,23 @@ func NewManager(anclaxApp *anclaxapp.Application, cfg *config.Config) (*Manager,
 		}
 	}
 
-	m := &Manager{
+	mgr := &Manager{
 		workflowPath: workflowPath,
 		httpPort:     cfg.Symphony.HTTPPort,
+		startedAt:    time.Now(),
+	}
+	if mdl != nil {
+		// best-effort DB-backed stats persistence
+		mgr.stats = NewDBStatsStore(mdl)
 	}
 
 	if anclaxApp != nil {
 		anclaxApp.GetCloserManager().Register(func(ctx context.Context) error {
-			return m.Stop(ctx)
+			return mgr.Stop(ctx)
 		})
 	}
 
-	return m, nil
+	return mgr, nil
 }
 
 func (m *Manager) Health() Health {
@@ -112,6 +122,7 @@ func (m *Manager) Start(ctx context.Context, workflowPath string, httpPort *int)
 
 	orch, err := orchestrator.New(orchestrator.Options{
 		WorkflowPath: m.workflowPath,
+		StatsStore:   m.stats,
 	})
 	if err != nil {
 		m.mu.Unlock()
@@ -167,15 +178,50 @@ func (m *Manager) Stop(ctx context.Context) error {
 func (m *Manager) Snapshot() map[string]any {
 	m.mu.Lock()
 	orch := m.orch
+	startedAt := m.startedAt
+	stats := m.stats
 	m.mu.Unlock()
+
+	uptime := 0.0
+	if !startedAt.IsZero() {
+		uptime = time.Since(startedAt).Seconds()
+	}
+
 	if orch == nil {
+		totals := orchestrator.CodexTotals{SecondsRunning: uptime}
+		completed := []orchestrator.CompletedEntry{}
+		rateLimits := map[string]any{}
+
+		if stats != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+			defer cancel()
+			if st, rl, attempts, err := stats.Load(ctx, 200); err == nil {
+				st.SecondsRunning = uptime
+				totals = st
+				if rl != nil {
+					rateLimits = rl
+				}
+				if attempts != nil {
+					completed = attempts
+				}
+			}
+		}
+
 		return map[string]any{
 			"running":      []any{},
 			"retrying":     []any{},
-			"completed":    []any{},
-			"codex_totals": map[string]any{"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "seconds_running": 0.0},
-			"rate_limits":  map[string]any{},
+			"completed":    completed,
+			"codex_totals": totals,
+			"rate_limits":  rateLimits,
 		}
 	}
-	return orch.Snapshot()
+
+	snap := orch.Snapshot()
+	if v, ok := snap["codex_totals"].(orchestrator.CodexTotals); ok {
+		v.SecondsRunning = uptime
+		snap["codex_totals"] = v
+	} else if v, ok := snap["codex_totals"].(*orchestrator.CodexTotals); ok && v != nil {
+		v.SecondsRunning = uptime
+	}
+	return snap
 }

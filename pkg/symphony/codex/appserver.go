@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -73,8 +74,8 @@ type Session struct {
 	proc     *process
 	client   *rpcClient
 
-	mu        sync.Mutex
-	absUsage  tokenTotals
+	mu       sync.Mutex
+	absUsage tokenTotals
 }
 
 func (s *Session) ThreadID() string { return s.threadID }
@@ -887,6 +888,15 @@ func updateRateLimits(res *TurnResult, payload map[string]any) {
 		m, ok := v.(map[string]any)
 		return m, ok
 	}
+	asMapOrSliceFirst := func(v any) (map[string]any, bool) {
+		if m, ok := asMap(v); ok {
+			return m, true
+		}
+		if xs, ok := v.([]any); ok && len(xs) > 0 {
+			return asMap(xs[0])
+		}
+		return nil, false
+	}
 
 	getMap := func(m map[string]any, keys ...string) map[string]any {
 		if m == nil {
@@ -894,7 +904,7 @@ func updateRateLimits(res *TurnResult, payload map[string]any) {
 		}
 		for _, k := range keys {
 			if v, ok := m[k]; ok {
-				if mm, ok := asMap(v); ok {
+				if mm, ok := asMapOrSliceFirst(v); ok {
 					return mm
 				}
 			}
@@ -902,6 +912,67 @@ func updateRateLimits(res *TurnResult, payload map[string]any) {
 		return nil
 	}
 
+	apply := func(m map[string]any) {
+		if m == nil {
+			return
+		}
+		// Best-effort extraction; tolerate schema drift across Codex protocol versions.
+		res.InputTokens = asInt(m["input_tokens"], res.InputTokens)
+		res.InputTokens = asInt(m["inputTokens"], res.InputTokens)
+		res.InputTokens = asInt(m["prompt_tokens"], res.InputTokens)
+		res.InputTokens = asInt(m["promptTokens"], res.InputTokens)
+
+		res.OutputTokens = asInt(m["output_tokens"], res.OutputTokens)
+		res.OutputTokens = asInt(m["outputTokens"], res.OutputTokens)
+		res.OutputTokens = asInt(m["completion_tokens"], res.OutputTokens)
+		res.OutputTokens = asInt(m["completionTokens"], res.OutputTokens)
+
+		res.TotalTokens = asInt(m["total_tokens"], res.TotalTokens)
+		res.TotalTokens = asInt(m["totalTokens"], res.TotalTokens)
+
+		if rl := getMap(m, "rate_limits", "rateLimits"); rl != nil {
+			res.RateLimits = rl
+		}
+	}
+
+	// Walk nested payload maps to find usage/rate limit blocks even if the protocol shape drifts
+	// (e.g. tokens nested under response/metrics/...).
+	type node struct {
+		v     any
+		depth int
+	}
+	queue := []node{{v: payload, depth: 0}}
+	seen := 0
+	for len(queue) > 0 && seen < 250 {
+		n := queue[0]
+		queue = queue[1:]
+		seen++
+
+		if n.depth > 6 || n.v == nil {
+			continue
+		}
+
+		if m, ok := asMap(n.v); ok {
+			apply(m)
+			if usage := getMap(m, "usage", "tokenUsage", "token_usage"); usage != nil {
+				apply(usage)
+			}
+			// keep exploring
+			for _, v := range m {
+				queue = append(queue, node{v: v, depth: n.depth + 1})
+			}
+			continue
+		}
+
+		if xs, ok := n.v.([]any); ok {
+			for _, v := range xs {
+				queue = append(queue, node{v: v, depth: n.depth + 1})
+			}
+			continue
+		}
+	}
+
+	// Some payloads put rate limits on the top-level.
 	if rl := getMap(payload, "rate_limits", "rateLimits"); rl != nil {
 		res.RateLimits = rl
 		return
@@ -925,6 +996,17 @@ func asInt(v any, fallback int) int {
 	case json.Number:
 		if n, err := t.Int64(); err == nil {
 			return int(n)
+		}
+	case string:
+		s := strings.TrimSpace(t)
+		if s == "" {
+			return fallback
+		}
+		if n, err := strconv.ParseInt(s, 10, 64); err == nil {
+			return int(n)
+		}
+		if f, err := strconv.ParseFloat(s, 64); err == nil {
+			return int(f)
 		}
 	}
 	return fallback
