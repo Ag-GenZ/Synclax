@@ -24,7 +24,7 @@ workspace:
 
 hooks:
   after_create: |
-    git clone git@github.com:wibus-wee/synclax.git .
+    git clone --depth 1 git@github.com:wibus-wee/synclax.git .
   before_run: |
     anclax install
     make gen
