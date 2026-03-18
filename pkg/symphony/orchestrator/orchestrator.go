@@ -632,15 +632,37 @@ func (o *Orchestrator) onWorkerUpdate(issueID string, upd agent.Update) {
 			"output_text",
 			"content",
 		} {
-			if v, ok := payload[k].(string); ok && strings.TrimSpace(v) != "" {
-				return v
+			switch v := payload[k].(type) {
+			case string:
+				if strings.TrimSpace(v) != "" {
+					return v
+				}
+			case map[string]any:
+				if s, ok := v["text"].(string); ok && strings.TrimSpace(s) != "" {
+					return s
+				}
 			}
 		}
 		if item, ok := payload["item"].(map[string]any); ok {
 			for _, k := range []string{"message", "text", "delta", "content"} {
-				if v, ok := item[k].(string); ok && strings.TrimSpace(v) != "" {
-					return v
+				switch v := item[k].(type) {
+				case string:
+					if strings.TrimSpace(v) != "" {
+						return v
+					}
+				case map[string]any:
+					if s, ok := v["text"].(string); ok && strings.TrimSpace(s) != "" {
+						return s
+					}
 				}
+			}
+		}
+		if delta, ok := payload["delta"].(map[string]any); ok {
+			if s, ok := delta["text"].(string); ok && strings.TrimSpace(s) != "" {
+				return s
+			}
+			if s, ok := delta["summaryTextDelta"].(string); ok && strings.TrimSpace(s) != "" {
+				return s
 			}
 		}
 		return ""
@@ -705,10 +727,33 @@ func (o *Orchestrator) onWorkerUpdate(issueID string, upd agent.Update) {
 		if v, ok := intFromAny(usage["input_tokens"]); ok {
 			r.Live.CodexInputTokens = v
 		}
+		if v, ok := intFromAny(usage["inputTokens"]); ok {
+			r.Live.CodexInputTokens = v
+		}
+		if v, ok := intFromAny(usage["prompt_tokens"]); ok {
+			r.Live.CodexInputTokens = v
+		}
+		if v, ok := intFromAny(usage["promptTokens"]); ok {
+			r.Live.CodexInputTokens = v
+		}
+
 		if v, ok := intFromAny(usage["output_tokens"]); ok {
 			r.Live.CodexOutputTokens = v
 		}
+		if v, ok := intFromAny(usage["outputTokens"]); ok {
+			r.Live.CodexOutputTokens = v
+		}
+		if v, ok := intFromAny(usage["completion_tokens"]); ok {
+			r.Live.CodexOutputTokens = v
+		}
+		if v, ok := intFromAny(usage["completionTokens"]); ok {
+			r.Live.CodexOutputTokens = v
+		}
+
 		if v, ok := intFromAny(usage["total_tokens"]); ok {
+			r.Live.CodexTotalTokens = v
+		}
+		if v, ok := intFromAny(usage["totalTokens"]); ok {
 			r.Live.CodexTotalTokens = v
 		}
 	}
@@ -719,6 +764,15 @@ func (o *Orchestrator) onWorkerUpdate(issueID string, upd agent.Update) {
 	if usage, ok := upd.Payload["Usage"].(map[string]any); ok {
 		applyUsage(usage)
 	}
+	if usage, ok := upd.Payload["tokenUsage"].(map[string]any); ok {
+		applyUsage(usage)
+	}
+	if usage, ok := upd.Payload["token_usage"].(map[string]any); ok {
+		applyUsage(usage)
+	}
+
+	// Some events send tokens on the top-level payload.
+	applyUsage(upd.Payload)
 }
 
 func (o *Orchestrator) onWorkerExit(ctx context.Context, entry *RunningEntry, res agent.Result, err error) {

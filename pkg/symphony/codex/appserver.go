@@ -518,16 +518,52 @@ func updateUsageAndRateLimits(res *TurnResult, payload map[string]any) {
 	if res == nil || payload == nil {
 		return
 	}
-	// Best-effort extraction; tolerate schema drift.
-	if usage, ok := payload["usage"].(map[string]any); ok {
-		res.InputTokens = asInt(usage["input_tokens"], res.InputTokens)
-		res.OutputTokens = asInt(usage["output_tokens"], res.OutputTokens)
-		res.TotalTokens = asInt(usage["total_tokens"], res.TotalTokens)
-		if rl, ok := usage["rate_limits"].(map[string]any); ok {
-			res.RateLimits = rl
-		}
+
+	asMap := func(v any) (map[string]any, bool) {
+		m, ok := v.(map[string]any)
+		return m, ok
 	}
-	if rl, ok := payload["rate_limits"].(map[string]any); ok {
+
+	getMap := func(m map[string]any, keys ...string) map[string]any {
+		for _, k := range keys {
+			if v, ok := m[k]; ok {
+				if mm, ok := asMap(v); ok {
+					return mm
+				}
+			}
+		}
+		return nil
+	}
+
+	// Best-effort extraction; tolerate schema drift across Codex protocol versions.
+	//
+	// Seen shapes include:
+	// - { usage: { input_tokens, output_tokens, total_tokens, rate_limits } }
+	// - { tokenUsage: { inputTokens, outputTokens, totalTokens } }
+	// - { inputTokens, outputTokens, totalTokens }
+	usage := getMap(payload, "usage", "tokenUsage", "token_usage")
+	if usage == nil {
+		usage = payload
+	}
+
+	res.InputTokens = asInt(usage["input_tokens"], res.InputTokens)
+	res.InputTokens = asInt(usage["inputTokens"], res.InputTokens)
+	res.InputTokens = asInt(usage["prompt_tokens"], res.InputTokens)
+	res.InputTokens = asInt(usage["promptTokens"], res.InputTokens)
+
+	res.OutputTokens = asInt(usage["output_tokens"], res.OutputTokens)
+	res.OutputTokens = asInt(usage["outputTokens"], res.OutputTokens)
+	res.OutputTokens = asInt(usage["completion_tokens"], res.OutputTokens)
+	res.OutputTokens = asInt(usage["completionTokens"], res.OutputTokens)
+
+	res.TotalTokens = asInt(usage["total_tokens"], res.TotalTokens)
+	res.TotalTokens = asInt(usage["totalTokens"], res.TotalTokens)
+
+	// Rate limits
+	if rl := getMap(usage, "rate_limits", "rateLimits"); rl != nil {
+		res.RateLimits = rl
+	}
+	if rl := getMap(payload, "rate_limits", "rateLimits"); rl != nil {
 		res.RateLimits = rl
 	}
 }
