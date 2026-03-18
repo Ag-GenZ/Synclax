@@ -192,6 +192,11 @@ docs/         VitePress documentation site
 wire/         Wire dependency injection config
 ```
 
+### Developer Docs
+
+- Developer Guide（扩展点：provider / tracker）：`docs/developer/developer-guide.md`
+- WORKFLOW.md Reference（配置契约）：`docs/reference/workflow.md`
+
 ### Regenerate Code
 
 After modifying `api/v1.yaml`, `wire/wire.go`, or SQL files:
