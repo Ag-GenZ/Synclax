@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 
 	"github.com/wibus-wee/synclax/pkg/symphony/orchestrator"
 	"github.com/wibus-wee/synclax/pkg/zcore/model"
@@ -13,14 +14,19 @@ import (
 )
 
 type dbStatsStore struct {
-	model model.ModelInterface
+	model      model.ModelInterface
+	workflowID string
 }
 
-func NewDBStatsStore(m model.ModelInterface) orchestrator.StatsStore {
+func NewDBStatsStore(m model.ModelInterface, workflowID string) orchestrator.StatsStore {
 	if m == nil {
 		return nil
 	}
-	return &dbStatsStore{model: m}
+	workflowID = strings.TrimSpace(workflowID)
+	if workflowID == "" {
+		workflowID = "default"
+	}
+	return &dbStatsStore{model: m, workflowID: workflowID}
 }
 
 func (s *dbStatsStore) Load(ctx context.Context, maxAttempts int) (orchestrator.CodexTotals, map[string]any, []orchestrator.CompletedEntry, error) {
@@ -31,7 +37,7 @@ func (s *dbStatsStore) Load(ctx context.Context, maxAttempts int) (orchestrator.
 		ctx = context.Background()
 	}
 
-	st, err := s.model.GetSymphonyState(ctx)
+	st, err := s.model.GetSymphonyState(ctx, s.workflowID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return orchestrator.CodexTotals{}, map[string]any{}, []orchestrator.CompletedEntry{}, nil
@@ -56,14 +62,17 @@ func (s *dbStatsStore) Load(ctx context.Context, maxAttempts int) (orchestrator.
 		limit = 200
 	}
 
-	rawEntries, err := s.model.ListSymphonyCompletedAttempts(ctx, int32(limit))
+	rawEntries, err := s.model.ListSymphonyCompletedAttempts(ctx, querier.ListSymphonyCompletedAttemptsParams{
+		WorkflowID: s.workflowID,
+		Limit:      int32(limit),
+	})
 	if err != nil {
 		return totals, rateLimits, nil, err
 	}
 	entries := make([]orchestrator.CompletedEntry, 0, len(rawEntries))
-	for _, row := range rawEntries {
+	for _, raw := range rawEntries {
 		var entry orchestrator.CompletedEntry
-		if err := json.Unmarshal(row.Entry, &entry); err != nil {
+		if err := json.Unmarshal(raw, &entry); err != nil {
 			continue
 		}
 		entries = append(entries, entry)
@@ -98,6 +107,7 @@ func (s *dbStatsStore) Record(ctx context.Context, totals orchestrator.CodexTota
 
 	// Do not persist uptime in DB; it's derived from process start time.
 	params := querier.UpsertSymphonyStateParams{
+		WorkflowID:        s.workflowID,
 		CodexInputTokens:  int64(totals.InputTokens),
 		CodexOutputTokens: int64(totals.OutputTokens),
 		CodexTotalTokens:  int64(totals.TotalTokens),
@@ -105,14 +115,20 @@ func (s *dbStatsStore) Record(ctx context.Context, totals orchestrator.CodexTota
 	}
 
 	return s.model.RunTransaction(ctx, func(m model.ModelInterface) error {
-		if err := m.InsertSymphonyCompletedAttempt(ctx, entryJSON); err != nil {
+		if err := m.InsertSymphonyCompletedAttempt(ctx, querier.InsertSymphonyCompletedAttemptParams{
+			WorkflowID: s.workflowID,
+			Entry:      entryJSON,
+		}); err != nil {
 			return err
 		}
 		if err := m.UpsertSymphonyState(ctx, params); err != nil {
 			return err
 		}
 		// Keep only the last N rows to avoid unbounded growth.
-		_ = m.PruneSymphonyCompletedAttempts(ctx, int32(200))
+		_ = m.PruneSymphonyCompletedAttempts(ctx, querier.PruneSymphonyCompletedAttemptsParams{
+			WorkflowID: s.workflowID,
+			Keep:       int32(200),
+		})
 		return nil
 	})
 }

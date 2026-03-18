@@ -2,8 +2,8 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { GetCounterData, GetCounterResponses, GetHealthData, GetHealthResponses, GetSymphonySnapshotData, GetSymphonySnapshotResponses, IncrementCounterData, IncrementCounterResponses, StartSymphonyData, StartSymphonyResponses, StopSymphonyData, StopSymphonyResponses } from './types.gen';
-import { zGetCounterData, zGetHealthData, zGetSymphonySnapshotData, zIncrementCounterData, zStartSymphonyData, zStopSymphonyData } from './zod.gen';
+import type { GetCounterData, GetCounterResponses, GetHealthData, GetHealthResponses, GetSymphonySnapshotData, GetSymphonySnapshotResponses, GetSymphonyWorkflowsData, GetSymphonyWorkflowsResponses, IncrementCounterData, IncrementCounterResponses, StartSymphonyData, StartSymphonyResponses, StopSymphonyData, StopSymphonyResponses } from './types.gen';
+import { zGetCounterData, zGetHealthData, zGetSymphonySnapshotData, zGetSymphonyWorkflowsData, zIncrementCounterData, zStartSymphonyData, zStopSymphonyData } from './zod.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = Options2<TData, ThrowOnError> & {
     /**
@@ -64,6 +64,17 @@ export const startSymphony = <ThrowOnError extends boolean = false>(options?: Op
 export const stopSymphony = <ThrowOnError extends boolean = false>(options?: Options<StopSymphonyData, ThrowOnError>) => (options?.client ?? client).post<StopSymphonyResponses, unknown, ThrowOnError>({
     requestValidator: async (data) => await zStopSymphonyData.parseAsync(data),
     url: '/symphony/stop',
+    ...options
+});
+
+/**
+ * Symphony Workflows
+ *
+ * List known Symphony workflows for the web UI.
+ */
+export const getSymphonyWorkflows = <ThrowOnError extends boolean = false>(options?: Options<GetSymphonyWorkflowsData, ThrowOnError>) => (options?.client ?? client).get<GetSymphonyWorkflowsResponses, unknown, ThrowOnError>({
+    requestValidator: async (data) => await zGetSymphonyWorkflowsData.parseAsync(data),
+    url: '/symphony/workflows',
     ...options
 });
 

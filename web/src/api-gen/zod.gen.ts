@@ -2,26 +2,44 @@
 
 import * as z from 'zod';
 
-export const zHealthResponse = z.object({
-    status: z.string(),
-    symphony_running: z.boolean(),
-    symphony_workflow_path: z.string().nullish(),
-    symphony_last_error: z.string().nullish(),
-    symphony_http_port: z.int().min(-2147483648, { error: 'Invalid value: Expected int32 to be >= -2147483648' }).max(2147483647, { error: 'Invalid value: Expected int32 to be <= 2147483647' }).nullish()
-});
-
 export const zStartSymphonyRequest = z.object({
+    workflow_id: z.string().optional(),
     workflow_path: z.string().optional(),
     http_port: z.int().min(-2147483648, { error: 'Invalid value: Expected int32 to be >= -2147483648' }).max(2147483647, { error: 'Invalid value: Expected int32 to be <= 2147483647' }).nullish()
 });
 
 export const zStartSymphonyResult = z.object({
     running: z.boolean(),
+    workflow_id: z.string().nullish(),
     workflow_path: z.string().nullish()
 });
 
 export const zStopSymphonyResult = z.object({
-    running: z.boolean()
+    running: z.boolean(),
+    workflow_id: z.string().nullish()
+});
+
+export const zSymphonyWorkflow = z.object({
+    id: z.string(),
+    workflow_path: z.string(),
+    running: z.boolean(),
+    last_error: z.string().nullish(),
+    http_port: z.int().min(-2147483648, { error: 'Invalid value: Expected int32 to be >= -2147483648' }).max(2147483647, { error: 'Invalid value: Expected int32 to be <= 2147483647' }).nullish()
+});
+
+export const zHealthResponse = z.object({
+    status: z.string(),
+    symphony_running: z.boolean(),
+    symphony_active_workflow_id: z.string().nullish(),
+    symphony_workflow_path: z.string().nullish(),
+    symphony_last_error: z.string().nullish(),
+    symphony_http_port: z.int().min(-2147483648, { error: 'Invalid value: Expected int32 to be >= -2147483648' }).max(2147483647, { error: 'Invalid value: Expected int32 to be <= 2147483647' }).nullish(),
+    symphony_workflows: z.array(zSymphonyWorkflow).nullish()
+});
+
+export const zSymphonyWorkflowsResponse = z.object({
+    workflows: z.array(zSymphonyWorkflow),
+    active_workflow_id: z.string().nullish()
 });
 
 export const zLiveEvent = z.object({
@@ -135,7 +153,9 @@ export const zGetHealthData = z.object({
 export const zGetSymphonySnapshotData = z.object({
     body: z.never().optional(),
     path: z.never().optional(),
-    query: z.never().optional()
+    query: z.object({
+        workflow_id: z.string().optional()
+    }).optional()
 });
 
 export const zStartSymphonyData = z.object({
@@ -145,6 +165,14 @@ export const zStartSymphonyData = z.object({
 });
 
 export const zStopSymphonyData = z.object({
+    body: z.never().optional(),
+    path: z.never().optional(),
+    query: z.object({
+        workflow_id: z.string().optional()
+    }).optional()
+});
+
+export const zGetSymphonyWorkflowsData = z.object({
     body: z.never().optional(),
     path: z.never().optional(),
     query: z.never().optional()

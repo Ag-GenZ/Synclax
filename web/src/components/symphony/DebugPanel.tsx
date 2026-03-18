@@ -1,7 +1,6 @@
 import { memo, useState, useCallback } from "react";
 import {
   AlertCircleIcon,
-  CheckCircle2Icon,
   CopyIcon,
   FileTextIcon,
   RefreshCwIcon,
@@ -34,7 +33,6 @@ export const DebugPanel = memo(function DebugPanel({
 
   const {
     data: healthz,
-    isLoading: healthzLoading,
     error: healthzError,
   } = useDebugHealthz(port);
 
