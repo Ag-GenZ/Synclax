@@ -44,11 +44,11 @@ agent:
   max_turns: 20
 
 codex:
-  command: codex --config shell_environment_policy.inherit=all --config model_reasoning_effort=high --model gpt-5.2-codex app-server
-  approval_policy: never
-  thread_sandbox: workspace-write
-  turn_sandbox_policy:
-    type: workspaceWrite
+  command: codex --config model_reasoning_effort=high --model gpt-5.2-codex app-server
+  # approval_policy: never
+  # thread_sandbox: workspace-write
+  # turn_sandbox_policy:
+    # type: workspaceWrite
 
 server:
   port: 8089

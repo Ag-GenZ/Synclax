@@ -437,9 +437,11 @@ function SymphonyDashboard() {
                     </div>
                   ) : (
                     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                      {snapshot.running.map((e) => (
-                        <AgentCard key={e.issue_id} entry={e} />
-                      ))}
+                      {[...snapshot.running]
+                        .sort((a, b) => a.started_at.localeCompare(b.started_at))
+                        .map((e) => (
+                          <AgentCard key={e.issue_id} entry={e} />
+                        ))}
                     </div>
                   )}
                 </TabsPanel>
