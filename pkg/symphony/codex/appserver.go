@@ -196,6 +196,35 @@ func (s *Session) applyAbsUsageFromEvent(method string, payload map[string]any) 
 			s.absUsage.TotalTokens += extracted.TotalTokens
 		}
 		s.mu.Unlock()
+		return
+	}
+
+	// General fallback: for any other event that carries usage data in a recognisable
+	// shape (e.g. response/completed, response.done, model/response, etc.), treat the
+	// extracted value as an absolute cumulative total using the same monotonicity
+	// heuristic. This ensures session-level delta computation works even when Codex
+	// reports tokens on non-standard event names.
+	{
+		usage := getMap(payload, "usage", "tokenUsage", "token_usage")
+		if usage == nil {
+			return
+		}
+		extracted := extract(usage)
+		if extracted.InputTokens == 0 && extracted.OutputTokens == 0 && extracted.TotalTokens == 0 {
+			return
+		}
+		s.mu.Lock()
+		cur := s.absUsage
+		if extracted.TotalTokens >= cur.TotalTokens &&
+			extracted.InputTokens >= cur.InputTokens &&
+			extracted.OutputTokens >= cur.OutputTokens {
+			s.absUsage = extracted
+		} else {
+			s.absUsage.InputTokens += extracted.InputTokens
+			s.absUsage.OutputTokens += extracted.OutputTokens
+			s.absUsage.TotalTokens += extracted.TotalTokens
+		}
+		s.mu.Unlock()
 	}
 }
 
@@ -302,9 +331,19 @@ func (a *AppServer) RunTurn(ctx context.Context, session *Session, workspacePath
 				if endUsage.TotalTokens >= startUsage.TotalTokens &&
 					endUsage.InputTokens >= startUsage.InputTokens &&
 					endUsage.OutputTokens >= startUsage.OutputTokens {
-					result.InputTokens = endUsage.InputTokens - startUsage.InputTokens
-					result.OutputTokens = endUsage.OutputTokens - startUsage.OutputTokens
-					result.TotalTokens = endUsage.TotalTokens - startUsage.TotalTokens
+					deltaIn := endUsage.InputTokens - startUsage.InputTokens
+					deltaOut := endUsage.OutputTokens - startUsage.OutputTokens
+					deltaTotal := endUsage.TotalTokens - startUsage.TotalTokens
+					// Only override the tokens captured by updateRateLimits when the
+					// session-level tracking produced a real non-zero delta. If delta
+					// is zero it means applyAbsUsageFromEvent did not recognise the
+					// Codex token event format; in that case fall back to whatever
+					// updateRateLimits already accumulated from intermediate events.
+					if deltaIn > 0 || deltaOut > 0 || deltaTotal > 0 {
+						result.InputTokens = deltaIn
+						result.OutputTokens = deltaOut
+						result.TotalTokens = deltaTotal
+					}
 				}
 				return result, nil
 			case "turn/failed":

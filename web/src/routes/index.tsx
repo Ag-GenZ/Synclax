@@ -129,8 +129,6 @@ function Dashboard() {
   const [themeMode, setThemeMode] = useState(() =>
     typeof window !== "undefined" ? window.localStorage.getItem("theme") ?? "auto" : "auto",
   );
-  const [tokenHistory, setTokenHistory] = useState<Array<{ time: string; tokens: number }>>([]);
-
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (workflowId) window.localStorage.setItem("symphony.workflow_id", workflowId);
@@ -167,17 +165,6 @@ function Dashboard() {
     refetchInterval: autoRefresh ? 1000 : false,
     enabled: !!selectedWorkflowId,
   });
-
-  // Track token history for chart
-  useEffect(() => {
-    if (!snapshot) return;
-    const total = snapshot.agent_totals.total_tokens;
-    setTokenHistory((prev) => {
-      const now = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-      const next = [...prev, { time: now, tokens: total }];
-      return next.slice(-30); // keep last 30 data points
-    });
-  }, [snapshot?.agent_totals.total_tokens]);
 
   const { mutate: doStart, isPending: isStarting } = useMutation({
     ...startSymphonyMutation(),
@@ -260,6 +247,31 @@ function Dashboard() {
     { name: "Input", value: inputTokens || 1 },
     { name: "Output", value: outputTokens || 1 },
   ], [inputTokens, outputTokens]);
+
+  // Derive token history from persisted completed entries so the chart survives
+  // page refreshes and server restarts. Baseline accounts for older attempts
+  // that may have been pruned from the 200-entry completedHistory window.
+  const tokenHistory = useMemo(() => {
+    const entries = snapshot?.completed;
+    if (!entries?.length) return [];
+    const sorted = [...entries].sort(
+      (a, b) => new Date(a.ended_at).getTime() - new Date(b.ended_at).getTime(),
+    );
+    const completedSum = sorted.reduce((s, e) => s + (e.total_tokens ?? 0), 0);
+    const baseline = Math.max(0, (snapshot?.agent_totals.total_tokens ?? 0) - completedSum);
+    let cumulative = baseline;
+    return sorted.map((entry) => {
+      cumulative += entry.total_tokens ?? 0;
+      return {
+        time: new Date(entry.ended_at).toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        }),
+        tokens: cumulative,
+      };
+    });
+  }, [snapshot?.completed, snapshot?.agent_totals.total_tokens]);
 
   return (
     <SidebarProvider defaultOpen>
