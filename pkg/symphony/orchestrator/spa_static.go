@@ -17,7 +17,11 @@ func spaHandler(staticFS fs.FS) http.Handler {
 			return
 		}
 
-		name := "index.html"
+		fallback := "index.html"
+		if _, err := fs.Stat(staticFS, "_shell.html"); err == nil {
+			fallback = "_shell.html"
+		}
+		name := fallback
 		if p := strings.TrimSpace(r.URL.Path); p != "" && p != "/" {
 			clean := path.Clean(p)
 			clean = strings.TrimPrefix(clean, "/")
@@ -26,6 +30,8 @@ func spaHandler(staticFS fs.FS) http.Handler {
 					name = clean
 				}
 			}
+		} else if _, err := fs.Stat(staticFS, "index.html"); err == nil {
+			name = "index.html"
 		}
 
 		b, err := fs.ReadFile(staticFS, name)
@@ -41,4 +47,3 @@ func spaHandler(staticFS fs.FS) http.Handler {
 		_, _ = w.Write(b)
 	})
 }
-

@@ -67,7 +67,30 @@ Key capabilities:
 
 - Docker and Docker Compose
 - A [Linear](https://linear.app) account + API key
-- [Codex](https://github.com/openai/codex) installed and on `$PATH`
+- [Codex](https://github.com/openai/codex) installed on the machine that will execute agents
+
+### Standalone Symphony (recommended)
+
+This mode runs the Symphony orchestrator + an embedded dashboard in a single container, while executing Codex on a remote machine over SSH (usually your host machine).
+
+Notes:
+
+- The container uses the system `ssh` binary in non-interactive mode (`BatchMode=yes`), so the SSH target must be reachable without password prompts.
+- `docker-compose.prod.yaml` mounts `${HOME}/.ssh` into the container at `/root/.ssh` (read-only). Ensure that keypair is authorized on the SSH target.
+
+1. Configure `WORKFLOW.md`:
+
+   - Set `tracker.api_key` (or export `LINEAR_API_KEY`)
+   - Set `server.port: 8089`
+   - Set `worker.ssh_hosts` to an SSH target that has `codex` on `$PATH` (for example `user@host.docker.internal:22`)
+
+2. Start:
+
+```bash
+docker compose -f docker-compose.prod.yaml up -d
+```
+
+The dashboard is served by Symphony itself at `/` and uses the same server for APIs under `/api/v1`.
 
 ### 1. Configure
 
@@ -125,8 +148,8 @@ curl -X POST http://localhost:2910/api/v1/symphony/stop
 
 ```bash
 cd web
-pnpm install
-pnpm run dev   # opens at http://localhost:3000
+vp install
+vp dev --port 3000   # opens at http://localhost:3000
 ```
 
 The dashboard shows running agents, retrying issues, completed work, and token usage in real time.

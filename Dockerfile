@@ -12,7 +12,7 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-COPY --from=web /web/dist/static ./pkg/symphony/dashboard/static/
+COPY --from=web /web/dist/client ./pkg/symphony/dashboard/static/
 RUN CGO_ENABLED=0 go build -o /symphony ./cmd/symphony/main.go
 
 # Stage 3: runtime image
@@ -20,4 +20,3 @@ FROM alpine:3.21
 RUN apk add --no-cache openssh-client bash git ca-certificates
 COPY --from=build /symphony /usr/local/bin/symphony
 ENTRYPOINT ["symphony"]
-
