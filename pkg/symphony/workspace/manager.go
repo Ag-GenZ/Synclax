@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -8,15 +9,19 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/wibus-wee/synclax/pkg/symphony/ssh"
 )
 
 type Workspace struct {
 	Path         string
 	WorkspaceKey string
 	CreatedNow   bool
+	WorkerHost   *string // nil = local, non-nil = SSH target
 }
 
 type HookScripts struct {
@@ -52,9 +57,13 @@ func NewManager(root string, hooks HookScripts) (*Manager, error) {
 
 func (m *Manager) Root() string { return m.rootAbs }
 
-func (m *Manager) CreateForIssue(ctx context.Context, issueIdentifier string) (Workspace, error) {
+func (m *Manager) CreateForIssue(ctx context.Context, issueIdentifier string, workerHost *string) (Workspace, error) {
 	key := sanitizeWorkspaceKey(issueIdentifier)
 	workspacePath := filepath.Join(m.rootAbs, key)
+
+	if workerHost != nil && strings.TrimSpace(*workerHost) != "" {
+		return m.createRemote(ctx, key, workspacePath, workerHost)
+	}
 
 	if err := m.ensureRootReady(); err != nil {
 		return Workspace{}, err
@@ -88,12 +97,13 @@ func (m *Manager) CreateForIssue(ctx context.Context, issueIdentifier string) (W
 
 	ws := Workspace{Path: workspacePath, WorkspaceKey: key, CreatedNow: createdNow}
 	ws.Path = canonicalPath
+	ws.WorkerHost = nil
 	if err := m.prepareWorkspace(ws.Path); err != nil {
 		return Workspace{}, err
 	}
 
 	if ws.CreatedNow && strings.TrimSpace(m.hooks.AfterCreate) != "" {
-		if err := runHook(ctx, ws.Path, "after_create", m.hooks.AfterCreate, m.hooks.Timeout, true); err != nil {
+		if err := runHookLocal(ctx, ws.Path, "after_create", m.hooks.AfterCreate, m.hooks.Timeout, true); err != nil {
 			_ = os.RemoveAll(ws.Path)
 			return Workspace{}, err
 		}
@@ -105,21 +115,33 @@ func (m *Manager) BeforeRun(ctx context.Context, ws Workspace) error {
 	if strings.TrimSpace(m.hooks.BeforeRun) == "" {
 		return nil
 	}
-	return runHook(ctx, ws.Path, "before_run", m.hooks.BeforeRun, m.hooks.Timeout, true)
+	return m.runHook(ctx, ws, "before_run", m.hooks.BeforeRun, true)
 }
 
 func (m *Manager) AfterRunBestEffort(ctx context.Context, ws Workspace) {
 	if strings.TrimSpace(m.hooks.AfterRun) == "" {
 		return
 	}
-	if err := runHook(ctx, ws.Path, "after_run", m.hooks.AfterRun, m.hooks.Timeout, false); err != nil {
+	if err := m.runHook(ctx, ws, "after_run", m.hooks.AfterRun, false); err != nil {
 		log.Printf("symphony hook status=ignored name=after_run error=%v", err)
 	}
 }
 
-func (m *Manager) RemoveBestEffort(ctx context.Context, issueIdentifier string) {
+func (m *Manager) RemoveBestEffort(ctx context.Context, issueIdentifier string, workerHost *string) {
 	key := sanitizeWorkspaceKey(issueIdentifier)
 	workspacePath := filepath.Join(m.rootAbs, key)
+
+	if workerHost != nil && strings.TrimSpace(*workerHost) != "" {
+		target := ssh.ParseTarget(*workerHost)
+		_, _, err := ssh.Run(ctx, target, "rm -rf "+bashSingleQuote(workspacePath))
+		if err != nil {
+			log.Printf("symphony workspace_remove status=failed worker_host=%s path=%s error=%v", *workerHost, workspacePath, err)
+			return
+		}
+		log.Printf("symphony workspace_remove status=ok worker_host=%s path=%s", *workerHost, workspacePath)
+		return
+	}
+
 	if err := m.ensureRootReady(); err != nil {
 		log.Printf("symphony workspace_remove status=failed error=%v", err)
 		return
@@ -147,7 +169,7 @@ func (m *Manager) RemoveBestEffort(ctx context.Context, issueIdentifier string) 
 	}
 
 	if strings.TrimSpace(m.hooks.BeforeRemove) != "" {
-		if err := runHook(ctx, workspacePath, "before_remove", m.hooks.BeforeRemove, m.hooks.Timeout, false); err != nil {
+		if err := runHookLocal(ctx, workspacePath, "before_remove", m.hooks.BeforeRemove, m.hooks.Timeout, false); err != nil {
 			log.Printf("symphony hook status=ignored name=before_remove error=%v", err)
 		}
 	}
@@ -217,7 +239,7 @@ func sanitizeWorkspaceKey(identifier string) string {
 	return key
 }
 
-func runHook(ctx context.Context, cwd, name, script string, timeout time.Duration, fatal bool) error {
+func runHookLocal(ctx context.Context, cwd, name, script string, timeout time.Duration, fatal bool) error {
 	script = strings.TrimSpace(script)
 	if script == "" {
 		return nil
@@ -243,6 +265,100 @@ func runHook(ctx context.Context, cwd, name, script string, timeout time.Duratio
 	}
 	log.Printf("symphony hook status=ok name=%s", name)
 	return nil
+}
+
+func (m *Manager) runHook(ctx context.Context, ws Workspace, name, script string, fatal bool) error {
+	if ws.WorkerHost == nil || strings.TrimSpace(*ws.WorkerHost) == "" {
+		return runHookLocal(ctx, ws.Path, name, script, m.hooks.Timeout, fatal)
+	}
+
+	timeout := m.hooks.Timeout
+	if timeout <= 0 {
+		timeout = 60 * time.Second
+	}
+	hctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	target := ssh.ParseTarget(*ws.WorkerHost)
+	log.Printf("symphony hook status=starting name=%s cwd=%s worker_host=%s", name, ws.Path, *ws.WorkerHost)
+	out, _, err := ssh.Run(hctx, target, "cd "+bashSingleQuote(ws.Path)+" && "+script)
+	if hctx.Err() == context.DeadlineExceeded {
+		return fmt.Errorf("hook timeout name=%s", name)
+	}
+	if err != nil {
+		msg := strings.TrimSpace(out)
+		if fatal {
+			return fmt.Errorf("hook failed name=%s error=%w output=%s", name, err, msg)
+		}
+		return fmt.Errorf("hook failed name=%s error=%w output=%s", name, err, msg)
+	}
+	log.Printf("symphony hook status=ok name=%s worker_host=%s", name, *ws.WorkerHost)
+	return nil
+}
+
+func (m *Manager) createRemote(ctx context.Context, key string, workspacePath string, workerHost *string) (Workspace, error) {
+	target := ssh.ParseTarget(*workerHost)
+
+	script := strings.Join([]string{
+		"set -e",
+		`dir=` + bashSingleQuote(workspacePath),
+		"created=0",
+		`if [ ! -d "$dir" ]; then mkdir -p "$dir"; created=1; fi`,
+		`echo "__SYMPHONY_WORKSPACE__	$created	$dir"`,
+	}, "\n")
+
+	out, _, err := ssh.Run(ctx, target, script)
+	if err != nil {
+		return Workspace{}, err
+	}
+
+	path, created, ok := parseWorkspaceMarker(out)
+	if !ok {
+		return Workspace{}, fmt.Errorf("remote workspace create: marker missing (worker_host=%s output=%s)", *workerHost, strings.TrimSpace(out))
+	}
+
+	ws := Workspace{
+		Path:         path,
+		WorkspaceKey: key,
+		CreatedNow:   created,
+		WorkerHost:   workerHost,
+	}
+
+	if ws.CreatedNow && strings.TrimSpace(m.hooks.AfterCreate) != "" {
+		if err := m.runHook(ctx, ws, "after_create", m.hooks.AfterCreate, true); err != nil {
+			_, _, _ = ssh.Run(ctx, target, "rm -rf "+bashSingleQuote(ws.Path))
+			return Workspace{}, err
+		}
+	}
+	return ws, nil
+}
+
+func parseWorkspaceMarker(output string) (path string, created bool, ok bool) {
+	sc := bufio.NewScanner(strings.NewReader(output))
+	for sc.Scan() {
+		line := sc.Text()
+		if !strings.HasPrefix(line, "__SYMPHONY_WORKSPACE__\t") {
+			continue
+		}
+		parts := strings.SplitN(line, "\t", 3)
+		if len(parts) != 3 {
+			return "", false, false
+		}
+		n, err := strconv.Atoi(strings.TrimSpace(parts[1]))
+		if err != nil {
+			return "", false, false
+		}
+		p := strings.TrimSpace(parts[2])
+		if p == "" {
+			return "", false, false
+		}
+		return p, n != 0, true
+	}
+	return "", false, false
+}
+
+func bashSingleQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }
 
 func (m *Manager) ensureRootReady() error {

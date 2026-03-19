@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/wibus-wee/synclax/pkg/symphony/ssh"
 )
 
 const nonInteractiveToolInputAnswer = "This is a non-interactive session. Operator input is unavailable."
@@ -71,8 +73,9 @@ func NewAppServer(opts AppServerOptions) *AppServer {
 
 type Session struct {
 	threadID string
-	proc     *process
+	proc     process
 	client   *rpcClient
+	workerHost *string
 
 	mu       sync.Mutex
 	absUsage tokenTotals
@@ -87,11 +90,10 @@ type tokenTotals struct {
 }
 
 func (s *Session) PID() *int {
-	if s == nil || s.proc == nil || s.proc.cmd == nil || s.proc.cmd.Process == nil {
+	if s == nil || s.proc == nil {
 		return nil
 	}
-	pid := s.proc.cmd.Process.Pid
-	return &pid
+	return s.proc.PID()
 }
 
 func (s *Session) snapshotAbsUsage() tokenTotals {
@@ -232,32 +234,32 @@ func (s *Session) Close() error {
 	if s == nil || s.proc == nil {
 		return nil
 	}
-	return s.proc.close()
+	return s.proc.Close()
 }
 
-func (a *AppServer) StartSession(ctx context.Context, workspacePath string) (*Session, error) {
+func (a *AppServer) StartSession(ctx context.Context, workspacePath string, workerHost *string) (*Session, error) {
 	if a == nil || a.command == "" {
 		return nil, &Error{Category: ErrCodexNotFound.Error(), Err: errors.New("codex.command is empty")}
 	}
 
-	proc, err := startProcess(ctx, a.command, workspacePath)
+	proc, err := startProc(ctx, a.command, workspacePath, workerHost)
 	if err != nil {
 		return nil, err
 	}
 
 	client := newRPCClient(proc, a.readTimeout, a.tools, isNeverApprovalPolicy(a.approvalPolicy))
 	if err := client.start(ctx); err != nil {
-		_ = proc.close()
+		_ = proc.Close()
 		return nil, err
 	}
 
 	threadID, err := client.startThread(ctx, workspacePath, a.approvalPolicy, a.threadSandbox)
 	if err != nil {
-		_ = proc.close()
+		_ = proc.Close()
 		return nil, err
 	}
 
-	return &Session{threadID: threadID, proc: proc, client: client}, nil
+	return &Session{threadID: threadID, proc: proc, client: client, workerHost: workerHost}, nil
 }
 
 func isNeverApprovalPolicy(v any) bool {
@@ -307,7 +309,7 @@ func (a *AppServer) RunTurn(ctx context.Context, session *Session, workspacePath
 	for {
 		select {
 		case <-tctx.Done():
-			_ = session.proc.kill()
+			_ = session.proc.Kill()
 			return nil, &Error{Category: ErrTurnTimeout.Error(), Err: tctx.Err()}
 		case msg, ok := <-session.client.events:
 			if !ok {
@@ -367,7 +369,7 @@ type rpcMessage struct {
 }
 
 type rpcClient struct {
-	proc        *process
+	proc        process
 	readTimeout time.Duration
 	tools       toolExecutor
 	autoApprove bool
@@ -388,7 +390,7 @@ type rpcEnvelope struct {
 	Error  json.RawMessage `json:"error,omitempty"`
 }
 
-func newRPCClient(proc *process, readTimeout time.Duration, tools toolExecutor, autoApprove bool) *rpcClient {
+func newRPCClient(proc process, readTimeout time.Duration, tools toolExecutor, autoApprove bool) *rpcClient {
 	return &rpcClient{
 		proc:        proc,
 		readTimeout: readTimeout,
@@ -487,7 +489,7 @@ func (c *rpcClient) notify(method string, params any) error {
 		"method": method,
 		"params": params,
 	}
-	return c.proc.writeJSON(msg)
+	return c.proc.WriteJSON(msg)
 }
 
 func (c *rpcClient) request(ctx context.Context, method string, params any) (rpcEnvelope, error) {
@@ -509,7 +511,7 @@ func (c *rpcClient) request(ctx context.Context, method string, params any) (rpc
 		"method": method,
 		"params": params,
 	}
-	if err := c.proc.writeJSON(msg); err != nil {
+	if err := c.proc.WriteJSON(msg); err != nil {
 		cleanupWaiter()
 		return rpcEnvelope{}, &Error{Category: ErrResponseError.Error(), Err: err}
 	}
@@ -536,7 +538,7 @@ func (c *rpcClient) request(ctx context.Context, method string, params any) (rpc
 func (c *rpcClient) readLoop() {
 	defer close(c.events)
 	for {
-		line, err := c.proc.readLine()
+		line, err := c.proc.ReadLine()
 		if err != nil {
 			return
 		}
@@ -586,7 +588,7 @@ func (c *rpcClient) readLoop() {
 						},
 					})
 				}
-				_ = c.proc.writeJSON(map[string]any{
+				_ = c.proc.WriteJSON(map[string]any{
 					"id":     id,
 					"result": res,
 				})
@@ -605,7 +607,7 @@ func (c *rpcClient) readLoop() {
 					answers, _, _ = toolRequestUserInputUnavailableAnswers(payload)
 					decision = "non_interactive"
 				}
-				_ = c.proc.writeJSON(map[string]any{
+				_ = c.proc.WriteJSON(map[string]any{
 					"id": id,
 					"result": map[string]any{
 						"answers": answers,
@@ -626,7 +628,7 @@ func (c *rpcClient) readLoop() {
 							decision = "approved_for_session"
 						}
 					}
-					_ = c.proc.writeJSON(map[string]any{
+					_ = c.proc.WriteJSON(map[string]any{
 						"id": id,
 						"result": map[string]any{
 							"approved":  approved,
@@ -644,7 +646,7 @@ func (c *rpcClient) readLoop() {
 					continue
 				}
 				if strings.Contains(env.Method, "tool") {
-					_ = c.proc.writeJSON(map[string]any{
+					_ = c.proc.WriteJSON(map[string]any{
 						"id":     id,
 						"result": map[string]any{"success": false, "error": ErrUnsupportedToolCall.Error()},
 					})
@@ -810,7 +812,15 @@ func parseNumericID(raw json.RawMessage) (int, bool) {
 	return 0, false
 }
 
-type process struct {
+type process interface {
+	PID() *int
+	ReadLine() ([]byte, error)
+	WriteJSON(v any) error
+	Kill() error
+	Close() error
+}
+
+type localProcess struct {
 	cmd   *exec.Cmd
 	stdin io.WriteCloser
 	out   *bufio.Reader
@@ -819,7 +829,20 @@ type process struct {
 	closed bool
 }
 
-func startProcess(ctx context.Context, command, cwd string) (*process, error) {
+func startProc(ctx context.Context, command, cwd string, workerHost *string) (process, error) {
+	if workerHost != nil && strings.TrimSpace(*workerHost) != "" {
+		target := ssh.ParseTarget(*workerHost)
+		remoteCmd := "cd " + bashSingleQuote(cwd) + " && exec " + command
+		p, err := ssh.StartProcess(ctx, target, remoteCmd)
+		if err != nil {
+			return nil, &Error{Category: ErrCodexNotFound.Error(), Err: err}
+		}
+		return p, nil
+	}
+	return startLocalProcess(ctx, command, cwd)
+}
+
+func startLocalProcess(ctx context.Context, command, cwd string) (*localProcess, error) {
 	// Avoid `bash -l` (login shell) because it may source user profiles that write
 	// to stdout and corrupt the JSON-RPC line protocol.
 	cmd := exec.CommandContext(ctx, "bash", "-c", command)
@@ -840,7 +863,7 @@ func startProcess(ctx context.Context, command, cwd string) (*process, error) {
 		return nil, &Error{Category: ErrCodexNotFound.Error(), Err: err}
 	}
 
-	p := &process{
+	p := &localProcess{
 		cmd:   cmd,
 		stdin: stdin,
 		out:   bufio.NewReaderSize(stdout, 128*1024),
@@ -856,7 +879,15 @@ func startProcess(ctx context.Context, command, cwd string) (*process, error) {
 	return p, nil
 }
 
-func (p *process) readLine() ([]byte, error) {
+func (p *localProcess) PID() *int {
+	if p == nil || p.cmd == nil || p.cmd.Process == nil {
+		return nil
+	}
+	pid := p.cmd.Process.Pid
+	return &pid
+}
+
+func (p *localProcess) ReadLine() ([]byte, error) {
 	line, err := p.out.ReadBytes('\n')
 	if err != nil {
 		return nil, err
@@ -867,7 +898,7 @@ func (p *process) readLine() ([]byte, error) {
 	return line, nil
 }
 
-func (p *process) writeJSON(v any) error {
+func (p *localProcess) WriteJSON(v any) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.closed {
@@ -882,16 +913,16 @@ func (p *process) writeJSON(v any) error {
 	return err
 }
 
-func (p *process) kill() error {
+func (p *localProcess) Kill() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.closed || p.cmd.Process == nil {
+	if p.closed || p.cmd == nil || p.cmd.Process == nil {
 		return nil
 	}
 	return p.cmd.Process.Kill()
 }
 
-func (p *process) close() error {
+func (p *localProcess) Close() error {
 	p.mu.Lock()
 	if p.closed {
 		p.mu.Unlock()
@@ -901,9 +932,15 @@ func (p *process) close() error {
 	_ = p.stdin.Close()
 	p.mu.Unlock()
 
-	_ = p.kill()
-	_ = p.cmd.Wait()
+	_ = p.Kill()
+	if p.cmd != nil {
+		_ = p.cmd.Wait()
+	}
 	return nil
+}
+
+func bashSingleQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }
 
 func isUserInputRequired(method string, payload map[string]any) bool {

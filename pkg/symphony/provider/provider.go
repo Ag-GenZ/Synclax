@@ -3,7 +3,7 @@ package provider
 import "context"
 
 type Provider interface {
-	StartSession(ctx context.Context, workspacePath string) (Session, error)
+	StartSession(ctx context.Context, workspacePath string, workerHost *string) (Session, error)
 	RunTurn(
 		ctx context.Context,
 		session Session,
@@ -30,4 +30,3 @@ type ToolExecutor interface {
 	ToolSpecs() []map[string]any
 	Execute(tool string, arguments any) map[string]any
 }
-

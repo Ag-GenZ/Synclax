@@ -95,7 +95,7 @@ exit 0
 		LinearTimeout:  2 * time.Second,
 	})
 
-	session, err := srv.StartSession(ctx, workspace)
+	session, err := srv.StartSession(ctx, workspace, nil)
 	if err != nil {
 		t.Fatalf("StartSession: %v", err)
 	}

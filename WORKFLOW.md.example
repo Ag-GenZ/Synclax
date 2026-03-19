@@ -27,6 +27,14 @@ agent:
   max_concurrent_agents_by_state:
     In Progress: 2
 
+worker:
+  # Optional. When set, Symphony will run workspaces/hooks/Codex over SSH on the selected host.
+  # Formats: "user@host:port", "host:port", "user@host", "host", "[::1]:2222"
+  ssh_hosts:
+    - "user@host.docker.internal:22"
+  # Optional. 0 => auto (max_concurrent_agents / len(ssh_hosts))
+  max_concurrent_agents_per_host: 0
+
 codex:
   command: codex app-server
   read_timeout_ms: 5000
@@ -45,4 +53,3 @@ You are working on a Linear issue.
 - Attempt: {{ attempt }}
 
 Follow this repo's contribution guidelines and WORKFLOW policy.
-

@@ -1,0 +1,12 @@
+services:
+  symphony:
+    build: .
+    ports:
+      - "8089:8089"
+    volumes:
+      - ./WORKFLOW.md:/app/WORKFLOW.md:ro
+      - ${HOME}/.ssh:/root/.ssh:ro
+    environment:
+      - LINEAR_API_KEY=${LINEAR_API_KEY}
+    command: ["--port", "8089", "/app/WORKFLOW.md"]
+
