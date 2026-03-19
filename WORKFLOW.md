@@ -27,7 +27,7 @@ polling:
   interval_ms: 5000
 
 workspace:
-  root: ~/.cache/symphony_workspaces
+  root: /Users/wibus/.cache/symphony_workspaces
 
 hooks:
   after_create: |
@@ -41,14 +41,14 @@ hooks:
 
 worker:
   ssh_hosts:
-    - "wibus@host.docker.internal:22"
+    - "wibus@host.docker.internal:22" 
 
 agent:
   max_concurrent_agents: 10
   max_turns: 20
 
 codex:
-  command: codex --config model_reasoning_effort=high --model gpt-5.2-codex app-server
+  command: /Users/wibus/.bun/bin/codex --config model_reasoning_effort=high --model gpt-5.2-codex app-server
   # approval_policy: never
   # thread_sandbox: workspace-write
   # turn_sandbox_policy:

@@ -104,11 +104,11 @@ func New(opts Options) (*Orchestrator, error) {
 	}
 	o.newRunner = func(rt *runtime.EffectiveRuntime, tr tracker.Client, ws *workspace.Manager, prov provider.Provider, workerHost *string) attemptRunner {
 		return &agent.Worker{
-			Tracker:   tr,
-			Workspace: ws,
-			Provider:  prov,
-			Renderer:  rt.Renderer,
-			Config:    rt.Config,
+			Tracker:    tr,
+			Workspace:  ws,
+			Provider:   prov,
+			Renderer:   rt.Renderer,
+			Config:     rt.Config,
 			WorkerHost: workerHost,
 		}
 	}
@@ -441,11 +441,11 @@ func (o *Orchestrator) ensureHTTPServerLocked(port *int) {
 		o.mu.Unlock()
 		workflowPath := o.runtime.WorkflowPath()
 		resp := map[string]any{
-			"status":                     "ok",
-			"symphony_running":           !paused,
+			"status":                      "ok",
+			"symphony_running":            !paused,
 			"symphony_active_workflow_id": workflowID,
-			"symphony_workflow_path":     workflowPath,
-			"symphony_http_port":         httpPort,
+			"symphony_workflow_path":      workflowPath,
+			"symphony_http_port":          httpPort,
 			"symphony_workflows": []map[string]any{
 				{
 					"id":            workflowID,
@@ -854,8 +854,10 @@ func (o *Orchestrator) runWorker(parent context.Context, w attemptRunner, issue 
 	o.mu.Unlock()
 
 	status := "ok"
+	errStr := ""
 	if err != nil {
 		status = "error"
+		errStr = err.Error()
 	}
 	sessionID := strings.TrimSpace(entry.Live.SessionID)
 	threadID := strings.TrimSpace(entry.Live.ThreadID)
@@ -865,7 +867,7 @@ func (o *Orchestrator) runWorker(parent context.Context, w attemptRunner, issue 
 	}
 
 	log.Printf(
-		"symphony attempt_end status=%s issue_id=%s issue_identifier=%s session_id=%s thread_id=%s turn_id=%s turns=%d input_tokens=%d output_tokens=%d total_tokens=%d",
+		"symphony attempt_end status=%s issue_id=%s issue_identifier=%s session_id=%s thread_id=%s turn_id=%s turns=%d input_tokens=%d output_tokens=%d total_tokens=%d error=%s",
 		status,
 		entry.IssueID,
 		entry.Identifier,
@@ -876,6 +878,7 @@ func (o *Orchestrator) runWorker(parent context.Context, w attemptRunner, issue 
 		res.InputTokens,
 		res.OutputTokens,
 		res.TotalTokens,
+		errStr,
 	)
 
 	o.onWorkerExit(parent, entry, res, err)

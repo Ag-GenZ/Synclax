@@ -1,0 +1,2 @@
+Host host.docker.internal
+    StrictHostKeyChecking accept-new

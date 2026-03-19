@@ -33,9 +33,10 @@ type HookScripts struct {
 }
 
 type Manager struct {
-	rootAbs string
+	rootAbs   string // expanded absolute path for local operations
+	rootRaw   string // original value from config, used for remote paths (preserves ~)
 	rootCanon string
-	hooks   HookScripts
+	hooks     HookScripts
 
 	mu sync.Mutex
 }
@@ -52,7 +53,7 @@ func NewManager(root string, hooks HookScripts) (*Manager, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Manager{rootAbs: rootAbs, rootCanon: "", hooks: hooks}, nil
+	return &Manager{rootAbs: rootAbs, rootRaw: root, rootCanon: "", hooks: hooks}, nil
 }
 
 func (m *Manager) Root() string { return m.rootAbs }
@@ -62,7 +63,11 @@ func (m *Manager) CreateForIssue(ctx context.Context, issueIdentifier string, wo
 	workspacePath := filepath.Join(m.rootAbs, key)
 
 	if workerHost != nil && strings.TrimSpace(*workerHost) != "" {
-		return m.createRemote(ctx, key, workspacePath, workerHost)
+		// Use the raw (unexpanded) root so that ~ is expanded by the remote shell,
+		// not by the local process (which may be running in a container with a
+		// different home directory than the SSH target).
+		remotePath := m.rootRaw + "/" + key
+		return m.createRemote(ctx, key, remotePath, workerHost)
 	}
 
 	if err := m.ensureRootReady(); err != nil {
@@ -129,7 +134,7 @@ func (m *Manager) AfterRunBestEffort(ctx context.Context, ws Workspace) {
 
 func (m *Manager) RemoveBestEffort(ctx context.Context, issueIdentifier string, workerHost *string) {
 	key := sanitizeWorkspaceKey(issueIdentifier)
-	workspacePath := filepath.Join(m.rootAbs, key)
+	workspacePath := m.rootRaw + "/" + key
 
 	if workerHost != nil && strings.TrimSpace(*workerHost) != "" {
 		target := ssh.ParseTarget(*workerHost)
@@ -309,7 +314,7 @@ func (m *Manager) createRemote(ctx context.Context, key string, workspacePath st
 
 	out, _, err := ssh.Run(ctx, target, script)
 	if err != nil {
-		return Workspace{}, err
+		return Workspace{}, fmt.Errorf("remote workspace create failed (worker_host=%s path=%s): %w\noutput: %s", *workerHost, workspacePath, err, strings.TrimSpace(out))
 	}
 
 	path, created, ok := parseWorkspaceMarker(out)
