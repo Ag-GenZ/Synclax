@@ -69,39 +69,65 @@ Key capabilities:
 - A [Linear](https://linear.app) account + API key
 - [Codex](https://github.com/openai/codex) installed on the machine that will execute agents
 
-### Standalone Symphony (recommended)
+### Deployment modes
 
-This mode runs the Symphony orchestrator + an embedded dashboard in a single container, while executing Codex on a remote machine over SSH (usually your host machine).
+| Compose file | What it runs | Use when |
+|---|---|---|
+| `docker-compose.yaml` | Anclax API + PostgreSQL + Symphony (dev, hot-reload) | Local development |
+| `docker-compose.full.yaml` | Anclax API + PostgreSQL + Symphony (production build) | Self-hosted production |
+| `docker-compose.prod.yaml` | Symphony standalone only (no DB) | Lightweight / embedded dashboard only |
 
-Notes:
+### Standalone Symphony (lightweight)
 
-- The container uses the system `ssh` binary in non-interactive mode (`BatchMode=yes`), so the SSH target must be reachable without password prompts.
-- `docker-compose.prod.yaml` mounts `${HOME}/.ssh` into the container at `/root/.ssh` (read-only). Ensure that keypair is authorized on the SSH target.
+Runs the Symphony orchestrator + an embedded dashboard in a single container, executing Codex on a remote machine over SSH.
 
-1. Configure `WORKFLOW.md`:
+> The container uses `ssh` in `BatchMode=yes` — the SSH target must be reachable without password prompts.
 
-   - Set `tracker.api_key` (or export `LINEAR_API_KEY`)
-   - Set `server.port: 8089`
-   - Set `worker.ssh_hosts` to an SSH target that has `codex` on `$PATH` (for example `user@host.docker.internal:22`)
-
-2. Start:
+1. Configure `WORKFLOW.md` (see below), set `server.port: 8089` and `worker.ssh_hosts`.
+2. Set up a **dedicated SSH key** on the host (see [SSH setup](#ssh-setup)).
+3. Start:
 
 ```bash
-docker compose -f docker-compose.prod.yaml up -d
+LINEAR_API_KEY=lin_api_xxx docker compose -f docker-compose.prod.yaml up -d
 ```
 
-The dashboard is served by Symphony itself at `/` and uses the same server for APIs under `/api/v1`.
+The dashboard is served at `/` and APIs at `/api/v1`.
 
-### 1. Configure
+### 1. SSH setup
+
+Symphony SSH tunnels into the host to run Codex. Use a **dedicated key** to avoid exposing your main SSH identity to the container.
+
+```bash
+# Generate a dedicated keypair
+ssh-keygen -t ed25519 -f ~/.ssh/synclax_codex -C "synclax-codex" -N ""
+
+# Authorize it on the SSH target (restrict to codex app-server only)
+echo 'command="codex app-server",no-port-forwarding,no-X11-forwarding,no-agent-forwarding' \
+  $(cat ~/.ssh/synclax_codex.pub) >> ~/.ssh/authorized_keys
+
+# Test (must succeed without a password prompt)
+ssh -i ~/.ssh/synclax_codex -o BatchMode=yes localhost echo ok
+```
+
+Then update the compose volume mounts to use the dedicated key instead of the whole `~/.ssh` directory:
+
+```yaml
+volumes:
+  - ${HOME}/.ssh/synclax_codex:/root/.ssh/id_ed25519:ro
+  - ${HOME}/.ssh/synclax_codex.pub:/root/.ssh/id_ed25519.pub:ro
+```
+
+> **Why not mount the entire `~/.ssh`?** The container would have access to all your private keys. If the container is compromised, an attacker gains full SSH access to every host your keys are authorized on. A restricted dedicated key limits the blast radius to `codex app-server` only.
+
+### 2. Configure
 
 ```bash
 cp WORKFLOW.md.example WORKFLOW.md
 ```
 
-Edit `WORKFLOW.md` and fill in the YAML front matter:
+Edit `WORKFLOW.md` YAML front matter — minimum required fields:
 
 ```yaml
-
 tracker:
   kind: linear
   api_key: $LINEAR_API_KEY        # or set env var
@@ -109,26 +135,30 @@ tracker:
   active_states: ["Todo", "In Progress"]
   terminal_states: ["Done", "Closed"]
 
+worker:
+  ssh_hosts:
+    - "user@host.docker.internal:22"  # host machine from inside Docker (macOS)
+
 agent:
   max_concurrent_agents: 3
   max_turns: 10
-
-codex:
-  command: codex app-server
-
-You are working on the following Linear issue: {{ issue.title }}
-...
 ```
 
-### 2. Start
+### 3. Start
 
+**Development (hot-reload):**
 ```bash
-docker compose up
+LINEAR_API_KEY=lin_api_xxx docker compose up
 ```
 
-This starts the API server on port `2910` and a PostgreSQL database.
+**Production (full stack):**
+```bash
+LINEAR_API_KEY=lin_api_xxx docker compose -f docker-compose.full.yaml up -d
+```
 
-### 3. Use the API
+Both start the API server on port `2910` with a PostgreSQL database.
+
+### 4. Use the API
 
 ```bash
 # Check health
@@ -144,12 +174,12 @@ curl http://localhost:2910/api/v1/symphony/snapshot
 curl -X POST http://localhost:2910/api/v1/symphony/stop
 ```
 
-### 4. Web Dashboard
+### 5. Web Dashboard
 
 ```bash
 cd web
-vp install
-vp dev --port 3000   # opens at http://localhost:3000
+pnpm install
+pnpm dev --port 3000   # opens at http://localhost:3000
 ```
 
 The dashboard shows running agents, retrying issues, completed work, and token usage in real time.
@@ -164,7 +194,6 @@ The dashboard shows running agents, retrying issues, completed work, and token u
 ||||
 | `MYAPP_ANCLAX_PORT` | API server port | `2910` |
 | `MYAPP_ANCLAX_PG_DSN` | PostgreSQL DSN | — |
-| `MYAPP_SYMPHONY_WORKFLOW_PATH` | Path to `WORKFLOW.md` | `./WORKFLOW.md` |
 | `MYAPP_SYMPHONY_HTTP_PORT` | Symphony debug HTTP port | — |
 | `LINEAR_API_KEY` | Linear API key (if not inlined in WORKFLOW.md) | — |
 
@@ -174,10 +203,11 @@ The dashboard shows running agents, retrying issues, completed work, and token u
 anclax:
   port: 2910
   pg:
-    dsn: postgres://postgres:postgres@localhost:5432/postgres
+    dsn: postgres://postgres:postgres@localhost:5432/synclax
 
 symphony:
-  workflow_path: ./WORKFLOW.md
+  workflow_paths:
+    - ./WORKFLOW.md
   http_port: 8089
 ```
 

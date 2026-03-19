@@ -1,27 +1,35 @@
 services:
-  dev:
-    build: 
-      dockerfile: ./dev/Dockerfile.dev
-    ports:
-      - "2910:2910"
-    command:
-    - go
-    - run
-    - cmd/main.go
-    environment:
-      MYAPP_ANCLAX_PORT: 2910
-      MYAPP_ANCLAX_PG_DSN: postgres://postgres:postgres@db:5432/postgres
-    volumes:
-      - ./:/app
-      - go-data:/go/pkg/mod
-      - go-build-data:/root/.cache/go-build
-
-  db: 
+  db:
     image: "postgres:latest"
     ports:
       - "5432:5432"
     environment:
       POSTGRES_PASSWORD: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d synclax"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  app:
+    build:
+      dockerfile: ./dev/Dockerfile.dev
+    ports:
+      - "2910:2910"
+    command: [go, run, cmd/main.go]
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      MYAPP_ANCLAX_PORT: 2910
+      MYAPP_ANCLAX_PG_DSN: postgres://postgres:postgres@db:5432/postgres
+      LINEAR_API_KEY: ${LINEAR_API_KEY}
+    volumes:
+      - ./:/app
+      - ${HOME}/.ssh:/root/.ssh:ro
+      - go-data:/go/pkg/mod
+      - go-build-data:/root/.cache/go-build
 
 volumes:
   db-data:

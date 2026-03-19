@@ -30,11 +30,43 @@ HTTP API 仍然存在，但它是“Console 的后端契约”。除非你在做
 ## 前置条件
 
 - Docker + Docker Compose
+- [Codex](https://github.com/openai/codex) 安装在 SSH 目标机器上：`npm install -g @openai/codex`
+- SSH 专用密钥配置完成（见下方）
 - （可选）`jq`：用于格式化输出（没有也不影响）
 
-## 1) 启动开发环境（Docker Compose）
+### SSH 专用密钥设置
 
-在仓库根目录执行：
+Symphony 通过 SSH 远程执行 Codex。**不要**把整个 `~/.ssh` 挂进容器（会暴露所有私钥）——请使用专用密钥并限制其权限：
+
+```bash
+# 1. 生成专用密钥
+ssh-keygen -t ed25519 -f ~/.ssh/synclax_codex -C "synclax-codex" -N ""
+
+# 2. 把公钥加到 authorized_keys，并限制只能执行 codex app-server
+echo 'command="codex app-server",no-port-forwarding,no-X11-forwarding,no-agent-forwarding' \
+  $(cat ~/.ssh/synclax_codex.pub) >> ~/.ssh/authorized_keys
+
+# 3. 验证（必须不提示密码）
+ssh -i ~/.ssh/synclax_codex -o BatchMode=yes localhost echo ok
+```
+
+然后在 `docker-compose.yaml` 中把 SSH 挂载改为只挂专用密钥：
+
+```yaml
+volumes:
+  - ${HOME}/.ssh/synclax_codex:/root/.ssh/id_ed25519:ro
+  - ${HOME}/.ssh/synclax_codex.pub:/root/.ssh/id_ed25519.pub:ro
+```
+
+## 1) 启动环境（Docker Compose）
+
+在仓库根目录创建 `.env` 文件：
+
+```bash
+echo "LINEAR_API_KEY=lin_api_xxxx" > .env
+```
+
+然后执行：
 
 ```bash
 docker compose up
@@ -48,7 +80,15 @@ docker compose up
 Compose 里设置的关键环境变量（可在 `docker-compose.yaml` 看到）：
 
 - `MYAPP_ANCLAX_PORT=2910`
-- `MYAPP_ANCLAX_PG_DSN=postgres://postgres:postgres@db:5432/postgres`
+- `MYAPP_ANCLAX_PG_DSN=postgres://postgres:postgres@db:5432/synclax`
+
+::: tip 生产部署
+如需构建生产镜像（编译好的二进制，不含源码），使用：
+
+```bash
+LINEAR_API_KEY=lin_api_xxx docker compose -f docker-compose.full.yaml up -d
+```
+:::
 
 ## 2) 准备 WORKFLOW.md（Symphony 的核心配置）
 

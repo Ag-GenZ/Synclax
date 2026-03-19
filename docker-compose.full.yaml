@@ -1,0 +1,28 @@
+services:
+  db:
+    image: postgres:latest
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: synclax
+
+  app:
+    build:
+      context: .
+      target: anclax
+    ports:
+      - "2910:2910"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./:/app
+      - ${HOME}/.ssh:/root/.ssh:ro
+    environment:
+      MYAPP_ANCLAX_PORT: 2910
+      MYAPP_ANCLAX_PG_DSN: postgres://postgres:postgres@db:5432/synclax
+      MYAPP_SYMPHONY_WORKFLOW_PATH: /app/WORKFLOW.md
+      LINEAR_API_KEY: ${LINEAR_API_KEY}
+
+volumes:
+  db-data:

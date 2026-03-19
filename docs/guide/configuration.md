@@ -31,14 +31,14 @@ Synclax 使用 Anclax 的配置加载逻辑：
 anclax:
   port: 2910
   pg:
-    dsn: postgres://postgres:postgres@localhost:5432/postgres
+    dsn: postgres://postgres:postgres@localhost:5432/synclax
 ```
 
 环境变量示例（推荐用于本地/CI）：
 
 ```bash
 export MYAPP_ANCLAX_PORT=2910
-export MYAPP_ANCLAX_PG_DSN='postgres://postgres:postgres@localhost:5432/postgres'
+export MYAPP_ANCLAX_PG_DSN='postgres://postgres:postgres@localhost:5432/synclax'
 ```
 
 ::: tip
@@ -47,32 +47,60 @@ export MYAPP_ANCLAX_PG_DSN='postgres://postgres:postgres@localhost:5432/postgres
 
 ### 2) Synclax 集成：让 API Server 能控制 Symphony
 
-Synclax 在应用层增加了 `symphony` 配置块：
+Synclax 在应用层增加了 `symphony` 配置块，支持配置多个 workflow：
 
 ```yaml
 symphony:
-  workflow_path: ./WORKFLOW.md
+  workflow_paths:
+    - ./WORKFLOW.md
+  # 或单个：
+  # workflow_path: ./WORKFLOW.md
   # http_port: 8089   # 可选：开启 Symphony debug server（仅 127.0.0.1）
 ```
 
 等价环境变量：
 
 ```bash
-export MYAPP_SYMPHONY_WORKFLOW_PATH='./WORKFLOW.md'
 export MYAPP_SYMPHONY_HTTP_PORT=8089
 ```
 
 字段含义：
 
-- `workflow_path`：Symphony 默认使用的 `WORKFLOW.md` 路径
-  - 为空时默认 `"WORKFLOW.md"`
-  - 服务端会尽量转为绝对路径，便于 debug 与日志定位
+- `workflow_paths`： Symphony 加载的 `WORKFLOW.md` 路径列表（支持多 workflow 并发）
+- `workflow_path`：单个 workflow 的简写，与 `workflow_paths: [./WORKFLOW.md]` 等价
 - `http_port`：Symphony debug HTTP server 端口（可选）
-  - 绑定在 `127.0.0.1:<port>`，用于本机调试
 
 ::: warning
 Web UI 不建议依赖 debug server。UI 应该通过主 API Server 的 `/api/v1/symphony/snapshot` 获取状态。
 :::
+
+### 3) SSH 安全配置
+
+Symphony 通过 SSH 在宿主机上运行 Codex。**不要**把整个 `~/.ssh` 挂进容器，过盅导致所有私钥暴露。
+
+请使用**专用密钥 + 命令限制**：
+
+```bash
+# 1. 生成专用密钥
+ssh-keygen -t ed25519 -f ~/.ssh/synclax_codex -C "synclax-codex" -N ""
+
+# 2. 把公钥加到 authorized_keys，限制只能执行 codex app-server
+echo 'command="codex app-server",no-port-forwarding,no-X11-forwarding,no-agent-forwarding' \
+  $(cat ~/.ssh/synclax_codex.pub) >> ~/.ssh/authorized_keys
+
+# 3. 验证（必须不提示密码）
+ssh -i ~/.ssh/synclax_codex -o BatchMode=yes localhost echo ok
+```
+
+然后将 Compose 文件里的 `${HOME}/.ssh:/root/.ssh:ro` 改为：
+
+```yaml
+volumes:
+  - ${HOME}/.ssh/synclax_codex:/root/.ssh/id_ed25519:ro
+  - ${HOME}/.ssh/synclax_codex.pub:/root/.ssh/id_ed25519.pub:ro
+```
+
+即使容器被攻击者控制，也只能运行 `codex app-server`，无法获得完整 shell。
 
 ## B. Symphony 工作流：`WORKFLOW.md`
 

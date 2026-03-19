@@ -39,6 +39,10 @@ hooks:
     cd ..
   timeout_ms: 60000
 
+worker:
+  ssh_hosts:
+    - "wibus@host.docker.internal:22"
+
 agent:
   max_concurrent_agents: 10
   max_turns: 20
