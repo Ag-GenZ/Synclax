@@ -101,12 +101,12 @@ import { DebugPanel } from "#/components/symphony/DebugPanel";
 import { SettingsSheet } from "#/components/symphony/SettingsSheet";
 import { collectActivity, fmtAgo, fmtTokens, fmtSeconds } from "#/components/symphony/utils";
 
-export const Route = createFileRoute("/")({ component: Dashboard });
+export const Route = createFileRoute("/")({ component: DashboardPage });
 
 const PAGE_SIZE = 10;
 const PIE_COLORS = ["var(--info)", "var(--success)"];
 
-function Dashboard() {
+export function DashboardPage() {
   const qc = useQueryClient();
 
   const { data: health, isLoading: healthLoading, error: healthError } = useQuery({

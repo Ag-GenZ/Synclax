@@ -40,11 +40,11 @@ func (s *codexSession) Close() error {
 	return s.inner.Close()
 }
 
-func (p *codexProvider) StartSession(ctx context.Context, workspacePath string) (Session, error) {
+func (p *codexProvider) StartSession(ctx context.Context, workspacePath string, workerHost *string) (Session, error) {
 	if p == nil || p.srv == nil {
 		return nil, &Error{Category: ErrProviderNotFound.Error(), Err: errors.New("nil provider")}
 	}
-	sess, err := p.srv.StartSession(ctx, workspacePath)
+	sess, err := p.srv.StartSession(ctx, workspacePath, workerHost)
 	if err != nil {
 		return nil, wrapCodexErr(err)
 	}
@@ -100,4 +100,3 @@ func wrapCodexErr(err error) error {
 	}
 	return &Error{Category: cat, Err: ce.Err}
 }
-

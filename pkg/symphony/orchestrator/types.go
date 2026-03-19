@@ -52,6 +52,7 @@ type RunningEntry struct {
 	Identifier    string       `json:"issue_identifier"`
 	Attempt       *int         `json:"attempt,omitempty"`
 	WorkspacePath string       `json:"workspace_path"`
+	WorkerHost    *string      `json:"worker_host,omitempty"`
 	StartedAt     time.Time    `json:"started_at"`
 	Phase         RunPhase     `json:"phase"`
 	Live          LiveSession  `json:"live"`

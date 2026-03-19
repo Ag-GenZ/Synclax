@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/wibus-wee/synclax/pkg/symphony/agent"
 	symphonycfg "github.com/wibus-wee/synclax/pkg/symphony/config"
+	"github.com/wibus-wee/synclax/pkg/symphony/dashboard"
 	"github.com/wibus-wee/synclax/pkg/symphony/domain"
 	symphonylog "github.com/wibus-wee/synclax/pkg/symphony/logging"
 	"github.com/wibus-wee/synclax/pkg/symphony/provider"
@@ -44,7 +46,7 @@ type Orchestrator struct {
 	workspace       *workspace.Manager
 	provider        provider.Provider
 
-	newRunner func(rt *runtime.EffectiveRuntime, tr tracker.Client, ws *workspace.Manager, prov provider.Provider) attemptRunner
+	newRunner func(rt *runtime.EffectiveRuntime, tr tracker.Client, ws *workspace.Manager, prov provider.Provider, workerHost *string) attemptRunner
 
 	running map[string]*RunningEntry
 	claimed map[string]struct{}
@@ -60,6 +62,10 @@ type Orchestrator struct {
 	agentRateLimits map[string]any
 
 	httpServer *http.Server
+
+	hostTracker *hostTracker
+
+	paused bool
 }
 
 type attemptRunner interface {
@@ -96,13 +102,14 @@ func New(opts Options) (*Orchestrator, error) {
 		completed: map[string]struct{}{},
 		stats:     opts.StatsStore,
 	}
-	o.newRunner = func(rt *runtime.EffectiveRuntime, tr tracker.Client, ws *workspace.Manager, prov provider.Provider) attemptRunner {
+	o.newRunner = func(rt *runtime.EffectiveRuntime, tr tracker.Client, ws *workspace.Manager, prov provider.Provider, workerHost *string) attemptRunner {
 		return &agent.Worker{
 			Tracker:   tr,
 			Workspace: ws,
 			Provider:  prov,
 			Renderer:  rt.Renderer,
 			Config:    rt.Config,
+			WorkerHost: workerHost,
 		}
 	}
 	return o, nil
@@ -351,6 +358,7 @@ func (o *Orchestrator) applyRuntimeLocked(portOverride *int) error {
 	o.cfg = rt.Config
 	o.appliedRevision = rev
 	symphonylog.Configure(o.cfg.Logging)
+	o.hostTracker = newHostTracker(o.cfg.Worker.SSHHosts, o.cfg.Worker.MaxConcurrentAgentsPerHost)
 
 	ws, err := workspace.NewManager(o.cfg.Workspace.Root, workspace.HookScripts{
 		AfterCreate:  o.cfg.Hooks.AfterCreate,
@@ -403,7 +411,7 @@ func (o *Orchestrator) ensureHTTPServerLocked(port *int) {
 		return
 	}
 
-	addr := fmt.Sprintf("127.0.0.1:%d", *port)
+	addr := fmt.Sprintf("0.0.0.0:%d", *port)
 	if o.httpServer != nil && o.httpServer.Addr == addr {
 		return
 	}
@@ -412,6 +420,8 @@ func (o *Orchestrator) ensureHTTPServerLocked(port *int) {
 	}
 
 	mux := http.NewServeMux()
+	httpPort := *port
+	workflowID := "default"
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
@@ -420,6 +430,121 @@ func (o *Orchestrator) ensureHTTPServerLocked(port *int) {
 		snap := o.snapshot()
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(snap)
+	})
+	mux.HandleFunc("/api/v1/health", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		o.mu.Lock()
+		paused := o.paused
+		o.mu.Unlock()
+		workflowPath := o.runtime.WorkflowPath()
+		resp := map[string]any{
+			"status":                     "ok",
+			"symphony_running":           !paused,
+			"symphony_active_workflow_id": workflowID,
+			"symphony_workflow_path":     workflowPath,
+			"symphony_http_port":         httpPort,
+			"symphony_workflows": []map[string]any{
+				{
+					"id":            workflowID,
+					"workflow_path": workflowPath,
+					"running":       !paused,
+					"http_port":     httpPort,
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	})
+	mux.HandleFunc("/api/v1/symphony/snapshot", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		snap := o.snapshot()
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(snap)
+	})
+	mux.HandleFunc("/api/v1/symphony/workflows", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		o.mu.Lock()
+		paused := o.paused
+		o.mu.Unlock()
+		workflowPath := o.runtime.WorkflowPath()
+		resp := map[string]any{
+			"workflows": []map[string]any{
+				{
+					"id":            workflowID,
+					"workflow_path": workflowPath,
+					"running":       !paused,
+					"http_port":     httpPort,
+				},
+			},
+			"active_workflow_id": workflowID,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	})
+	mux.HandleFunc("/api/v1/symphony/start", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		o.mu.Lock()
+		o.paused = false
+		o.mu.Unlock()
+
+		workflowPath := o.runtime.WorkflowPath()
+		resp := map[string]any{
+			"running":       true,
+			"workflow_id":   workflowID,
+			"workflow_path": workflowPath,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	})
+	mux.HandleFunc("/api/v1/symphony/stop", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+
+		var cancels []context.CancelFunc
+		o.mu.Lock()
+		o.paused = true
+		for id, re := range o.retries {
+			if re != nil && re.timerHandle != nil {
+				re.timerHandle.Stop()
+			}
+			delete(o.retries, id)
+			delete(o.claimed, id)
+		}
+		for _, run := range o.running {
+			if run == nil {
+				continue
+			}
+			run.Phase = PhaseCanceledByReconciliation
+			run.suppressRetry = true
+			if run.cancel != nil {
+				cancels = append(cancels, run.cancel)
+			}
+		}
+		o.mu.Unlock()
+		for _, c := range cancels {
+			c()
+		}
+
+		resp := map[string]any{
+			"running":     false,
+			"workflow_id": workflowID,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
 	})
 	mux.HandleFunc("/api/v1/state", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -453,6 +578,10 @@ func (o *Orchestrator) ensureHTTPServerLocked(port *int) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(snap)
 	})
+
+	if staticFS, err := fs.Sub(dashboard.Assets, "static"); err == nil {
+		mux.Handle("/", spaHandler(staticFS))
+	}
 
 	corsHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -498,6 +627,7 @@ func (o *Orchestrator) startupCleanupTerminal(ctx context.Context) {
 	o.mu.Lock()
 	tr := o.tracker
 	ws := o.workspace
+	sshHosts := append([]string(nil), o.cfg.Worker.SSHHosts...)
 	terminalStates := append([]string(nil), o.cfg.Tracker.TerminalStates...)
 	o.mu.Unlock()
 
@@ -507,13 +637,23 @@ func (o *Orchestrator) startupCleanupTerminal(ctx context.Context) {
 		return
 	}
 	for _, is := range issues {
-		ws.RemoveBestEffort(ctx, is.Identifier)
+		ws.RemoveBestEffort(ctx, is.Identifier, nil)
+		for _, h := range sshHosts {
+			hh := h
+			ws.RemoveBestEffort(ctx, is.Identifier, &hh)
+		}
 	}
 	log.Printf("symphony startup_cleanup status=ok terminal_count=%d", len(issues))
 }
 
 func (o *Orchestrator) tick(ctx context.Context) {
 	o.reconcile(ctx)
+	o.mu.Lock()
+	paused := o.paused
+	o.mu.Unlock()
+	if paused {
+		return
+	}
 	if !o.dispatchPreflightOK() {
 		return
 	}
@@ -627,6 +767,7 @@ func (o *Orchestrator) dispatchFromCandidates(ctx context.Context, candidates []
 	ws := o.workspace
 	prov := o.provider
 	newRunner := o.newRunner
+	ht := o.hostTracker
 	runningCount := len(o.running)
 	stateCounts := map[string]int{}
 	for _, r := range o.running {
@@ -663,16 +804,27 @@ func (o *Orchestrator) dispatchFromCandidates(ctx context.Context, candidates []
 		}
 
 		issueCopy := issue
+		workerHost, err := ht.acquire()
+		if err != nil {
+			return
+		}
 		o.claim(issueCopy.ID)
 		stateCounts[stateKey]++
 		available--
 
-		runner := newRunner(rt, tr, ws, prov)
-		go o.runWorker(ctx, runner, issueCopy, nil)
+		runner := newRunner(rt, tr, ws, prov, workerHost)
+		go o.runWorker(ctx, runner, issueCopy, nil, workerHost)
 	}
 }
 
-func (o *Orchestrator) runWorker(parent context.Context, w attemptRunner, issue domain.Issue, attempt *int) {
+func (o *Orchestrator) runWorker(parent context.Context, w attemptRunner, issue domain.Issue, attempt *int, workerHost *string) {
+	defer func() {
+		o.mu.Lock()
+		ht := o.hostTracker
+		o.mu.Unlock()
+		ht.release(workerHost)
+	}()
+
 	ctx, cancel := context.WithCancel(parent)
 	start := time.Now().UTC()
 	entry := &RunningEntry{
@@ -681,6 +833,7 @@ func (o *Orchestrator) runWorker(parent context.Context, w attemptRunner, issue 
 		Identifier:    issue.Identifier,
 		Attempt:       attempt,
 		WorkspacePath: "", // updated after workspace creation
+		WorkerHost:    workerHost,
 		StartedAt:     start,
 		Phase:         PhasePreparingWorkspace,
 		cancel:        cancel,
@@ -1051,7 +1204,7 @@ func (o *Orchestrator) onWorkerExit(ctx context.Context, entry *RunningEntry, re
 		persistBestEffort(totals, rateLimits, completed)
 
 		if cleanupOnExit {
-			ws.RemoveBestEffort(ctx, entry.Identifier)
+			ws.RemoveBestEffort(ctx, entry.Identifier, entry.WorkerHost)
 		}
 		o.releaseClaim(entry.IssueID)
 		return
@@ -1078,7 +1231,7 @@ func (o *Orchestrator) onWorkerExit(ctx context.Context, entry *RunningEntry, re
 
 		// If terminal at exit, clean + release instead of continuation retry.
 		if terminalAtExit {
-			ws.RemoveBestEffort(ctx, res.FinalIssue.Identifier)
+			ws.RemoveBestEffort(ctx, res.FinalIssue.Identifier, entry.WorkerHost)
 			o.releaseClaim(entry.IssueID)
 			return
 		}
@@ -1154,6 +1307,14 @@ func issueAlreadyClaimed(o *Orchestrator, issueID string) bool {
 }
 
 func (o *Orchestrator) scheduleRetry(ctx context.Context, issueID string, identifier string, attempt int, delayType string, errMsg *string, delay time.Duration) {
+	o.mu.Lock()
+	paused := o.paused
+	o.mu.Unlock()
+	if paused {
+		o.releaseClaim(issueID)
+		return
+	}
+
 	timer := time.AfterFunc(delay, func() {
 		o.onRetryTimer(ctx, issueID)
 	})
@@ -1183,8 +1344,13 @@ func (o *Orchestrator) onRetryTimer(ctx context.Context, issueID string) {
 	delete(o.retries, issueID)
 	tr := o.tracker
 	cfg := o.cfg
+	paused := o.paused
 	o.mu.Unlock()
 	if retryEntry == nil {
+		return
+	}
+	if paused {
+		o.releaseClaim(issueID)
 		return
 	}
 
@@ -1220,6 +1386,7 @@ func (o *Orchestrator) onRetryTimer(ctx context.Context, issueID string) {
 	ws := o.workspace
 	prov := o.provider
 	newRunner := o.newRunner
+	ht := o.hostTracker
 	o.mu.Unlock()
 
 	if runningCount >= maxGlobal {
@@ -1244,8 +1411,14 @@ func (o *Orchestrator) onRetryTimer(ctx context.Context, issueID string) {
 	}
 
 	att := retryEntry.Attempt
-	runner := newRunner(rt, tr, ws, prov)
-	go o.runWorker(ctx, runner, *found, &att)
+	workerHost, err := ht.acquire()
+	if err != nil {
+		msg := "no available worker host slots"
+		o.scheduleRetry(ctx, issueID, retryEntry.Identifier, retryEntry.Attempt+1, "backoff", &msg, backoffDelay(retryEntry.Attempt+1, cfg.Agent.MaxRetryBackoff))
+		return
+	}
+	runner := newRunner(rt, tr, ws, prov, workerHost)
+	go o.runWorker(ctx, runner, *found, &att, workerHost)
 }
 
 func (o *Orchestrator) snapshot() map[string]any {

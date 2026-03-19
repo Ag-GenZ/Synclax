@@ -21,7 +21,7 @@ func TestCreateForIssue_CreatesAndRunsAfterCreate(t *testing.T) {
 		t.Fatalf("NewManager error: %v", err)
 	}
 
-	ws, err := m.CreateForIssue(ctx, "ABC-123")
+	ws, err := m.CreateForIssue(ctx, "ABC-123", nil)
 	if err != nil {
 		t.Fatalf("CreateForIssue error: %v", err)
 	}
@@ -34,7 +34,7 @@ func TestCreateForIssue_CreatesAndRunsAfterCreate(t *testing.T) {
 
 	// Second call should reuse and not re-run after_create.
 	_ = os.Remove(filepath.Join(ws.Path, "after_create.txt"))
-	ws2, err := m.CreateForIssue(ctx, "ABC-123")
+	ws2, err := m.CreateForIssue(ctx, "ABC-123", nil)
 	if err != nil {
 		t.Fatalf("CreateForIssue (second) error: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestBeforeRun_FailureIsFatal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager error: %v", err)
 	}
-	ws, err := m.CreateForIssue(ctx, "ABC-123")
+	ws, err := m.CreateForIssue(ctx, "ABC-123", nil)
 	if err != nil {
 		t.Fatalf("CreateForIssue error: %v", err)
 	}
@@ -82,7 +82,7 @@ func TestCreateForIssue_RejectsSymlinkEscape(t *testing.T) {
 		t.Fatalf("Symlink error: %v", err)
 	}
 
-	_, err = m.CreateForIssue(ctx, "MT-1000")
+	_, err = m.CreateForIssue(ctx, "MT-1000", nil)
 	if err == nil {
 		t.Fatal("expected error")
 	}

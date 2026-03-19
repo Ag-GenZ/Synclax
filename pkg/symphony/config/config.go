@@ -15,6 +15,7 @@ type EffectiveConfig struct {
 	Workspace WorkspaceConfig
 	Hooks     HooksConfig
 	Agent     AgentConfig
+	Worker    WorkerConfig
 	Provider  ProviderConfig
 	Codex     CodexConfig
 	Server    ServerConfig
@@ -52,6 +53,11 @@ type AgentConfig struct {
 	MaxTurns                   int
 	MaxConcurrentAgentsByState map[string]int
 	StallTimeout               time.Duration
+}
+
+type WorkerConfig struct {
+	SSHHosts                   []string `yaml:"ssh_hosts"`
+	MaxConcurrentAgentsPerHost int      `yaml:"max_concurrent_agents_per_host"`
 }
 
 type ProviderConfig struct {
@@ -122,6 +128,10 @@ func FromWorkflowConfig(cfg map[string]any) (EffectiveConfig, error) {
 			MaxRetryBackoff:            timeFromMsAny(getNested(cfg, "agent", "max_retry_backoff_ms"), 300000),
 			MaxConcurrentAgentsByState: stateConcurrencyMap(getNested(cfg, "agent", "max_concurrent_agents_by_state")),
 			StallTimeout:               timeFromMsAny(stallTimeoutAny, 300000),
+		},
+		Worker: WorkerConfig{
+			SSHHosts:                   strSlice(getNested(cfg, "worker", "ssh_hosts")),
+			MaxConcurrentAgentsPerHost: intFromAny(getNested(cfg, "worker", "max_concurrent_agents_per_host"), 0),
 		},
 		Provider: ProviderConfig{
 			Kind: str(getNested(cfg, "provider", "kind")),
@@ -228,6 +238,24 @@ func normalize(cfg *EffectiveConfig) {
 	}
 	for i := range cfg.Tracker.TerminalStates {
 		cfg.Tracker.TerminalStates[i] = strings.TrimSpace(cfg.Tracker.TerminalStates[i])
+	}
+
+	hosts := make([]string, 0, len(cfg.Worker.SSHHosts))
+	for _, h := range cfg.Worker.SSHHosts {
+		h = strings.TrimSpace(h)
+		if h == "" {
+			continue
+		}
+		hosts = append(hosts, h)
+	}
+	cfg.Worker.SSHHosts = hosts
+
+	if len(cfg.Worker.SSHHosts) > 0 && cfg.Worker.MaxConcurrentAgentsPerHost <= 0 {
+		per := cfg.Agent.MaxConcurrentAgents / len(cfg.Worker.SSHHosts)
+		if per < 1 {
+			per = 1
+		}
+		cfg.Worker.MaxConcurrentAgentsPerHost = per
 	}
 }
 

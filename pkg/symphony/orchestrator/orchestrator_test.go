@@ -55,7 +55,7 @@ func (r *fakeRunner) RunAttempt(_ context.Context, _ domain.Issue, _ *int, _ fun
 
 type fakeProvider struct{}
 
-func (p *fakeProvider) StartSession(_ context.Context, _ string) (provider.Session, error) {
+func (p *fakeProvider) StartSession(_ context.Context, _ string, _ *string) (provider.Session, error) {
 	return nil, nil
 }
 
@@ -129,7 +129,7 @@ codex:
 			WorkspacePath: "",
 		},
 	}
-	o.newRunner = func(_ *runtime.EffectiveRuntime, _ tracker.Client, _ *workspace.Manager, _ provider.Provider) attemptRunner {
+	o.newRunner = func(_ *runtime.EffectiveRuntime, _ tracker.Client, _ *workspace.Manager, _ provider.Provider, _ *string) attemptRunner {
 		return r
 	}
 
@@ -196,7 +196,7 @@ codex:
 	}
 
 	r := &fakeRunner{called: make(chan struct{})}
-	o.newRunner = func(_ *runtime.EffectiveRuntime, _ tracker.Client, _ *workspace.Manager, _ provider.Provider) attemptRunner {
+	o.newRunner = func(_ *runtime.EffectiveRuntime, _ tracker.Client, _ *workspace.Manager, _ provider.Provider, _ *string) attemptRunner {
 		return r
 	}
 

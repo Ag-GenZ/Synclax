@@ -19,6 +19,7 @@ type Worker struct {
 	Provider  provider.Provider
 	Renderer  *template.Renderer
 	Config    symphonycfg.EffectiveConfig
+	WorkerHost *string
 }
 
 type Update struct {
@@ -51,7 +52,7 @@ func (w *Worker) RunAttempt(ctx context.Context, issue domain.Issue, attempt *in
 		emit("symphony/phase", payload)
 	}
 
-	ws, err := w.Workspace.CreateForIssue(ctx, issue.Identifier)
+	ws, err := w.Workspace.CreateForIssue(ctx, issue.Identifier, w.WorkerHost)
 	if err != nil {
 		return Result{}, err
 	}
@@ -63,7 +64,7 @@ func (w *Worker) RunAttempt(ctx context.Context, issue domain.Issue, attempt *in
 	defer w.Workspace.AfterRunBestEffort(ctx, ws)
 
 	emitPhase("LaunchingAgentProcess", nil)
-	session, err := w.Provider.StartSession(ctx, ws.Path)
+	session, err := w.Provider.StartSession(ctx, ws.Path, w.WorkerHost)
 	if err != nil {
 		return Result{}, err
 	}
