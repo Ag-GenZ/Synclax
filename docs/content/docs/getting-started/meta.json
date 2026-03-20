@@ -1,0 +1,5 @@
+{
+  "title": "Start Here",
+  "description": "第一次接触 Synclax 时的最短路径。",
+  "pages": ["index", "overview", "quickstart", "configuration", "troubleshooting"]
+}

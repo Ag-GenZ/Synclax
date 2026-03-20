@@ -1,0 +1,73 @@
+---
+title: Symphony SPEC
+description: 从规范视角解释 Symphony 的边界、目标与可运营性要求。
+---
+
+# Symphony SPEC
+
+这一页不是逐字翻译上游规范，而是围绕两个问题做结构化解读：
+
+1. Symphony 到底解决什么问题？
+2. 作为 Synclax 使用者和开发者，应该如何消费这份规范？
+
+## 1) Symphony 是什么
+
+从规范角度看，Symphony 是一个常驻控制循环：
+
+- 持续从 issue tracker 读取候选任务
+- 为每个 issue 准备隔离 workspace
+- 在 workspace 里运行 coding agent
+- 对失败、重试、停止、恢复做统一编排
+
+对 Synclax 来说，这意味着 Symphony 更接近 **scheduler / runner / tracker reader**，而不是业务逻辑引擎。
+
+## 2) 为什么它强调可运营性
+
+规范关心的并不是“一条 prompt 能不能一次成”，而是系统是否具备：
+
+- bounded concurrency
+- 单一权威的运行态
+- 可重复的 per-issue workspace
+- issue 状态变化后的停止 / 清理能力
+- transient failure 的指数退避
+- 不依赖外部数据库的重启恢复
+
+这正是 Synclax 要把 Snapshot、Health、Start / Stop 做成一等产品能力的原因。
+
+## 3) 组件分层
+
+规范建议至少拆成这些层：
+
+- Workflow Loader
+- Config Layer
+- Issue Tracker Client
+- Orchestrator
+- Workspace Manager
+- Agent Runner
+- Logging / Status Surface
+
+在 Synclax 代码里，这些层大体对应 `/docs/developer/architecture` 里列出的模块。
+
+## 4) UI 与规范的关系
+
+如果你在做 Console，可以把规范里的 runtime state 理解成一组稳定语义：
+
+- running map
+- retry map
+- claimed set
+- codex totals
+- rate limits
+
+Synclax 的 `/api/v1/symphony/snapshot` 就是把这些语义投影成 UI 可以直接消费的结构。
+
+## 5) 与 `WORKFLOW.md` 的关系
+
+规范把 `WORKFLOW.md` 视为 repo contract：
+
+- 用 front matter 配置 tracker / polling / workspace / hooks / agent / codex
+- 用模板 body 组织团队工作流和 agent 行为约束
+- 未知 key 需要前向兼容
+
+<Callout type="idea" title="对 Synclax 的现实意义">
+  团队流程不是散落在口头约定里的，而是应该被版本化在仓库里的 `WORKFLOW.md` 里。
+</Callout>

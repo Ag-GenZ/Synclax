@@ -1,0 +1,69 @@
+---
+title: Developer Architecture
+description: 站在代码库开发者视角的模块地图。
+---
+
+# Developer Architecture
+
+Synclax 由两个大的部分组成：
+
+1. **Anclax application**：HTTP API、任务、DB 模型、Wire 依赖图
+2. **Symphony orchestrator**：tracker -> workspace -> Codex 的控制循环
+
+## High-level diagram
+
+```text
+          ┌───────────────────────────┐
+          │        Web UI             │
+          │  (OpenAPI client)         │
+          └───────────┬───────────────┘
+                      │ HTTP (/api/v1)
+                      ▼
+┌────────────────────────────────────────────────┐
+│               Anclax + Fiber                   │
+│  - OpenAPI handlers (pkg/handler)              │
+│  - Task handlers (pkg/asynctask)               │
+│  - DB model/sqlc (pkg/zcore/model + zgen)      │
+│  - Symphony control API                        │
+└───────────────┬────────────────────────────────┘
+                │ starts/stops
+                ▼
+┌────────────────────────────────────────────────┐
+│                Symphony Orchestrator           │
+│  - runtime.Manager (reload WORKFLOW.md)        │
+│  - tracker.Client (Linear)                     │
+│  - workspace.Manager (+ hooks)                 │
+│  - codex.AppServer (Codex app-server protocol) │
+└────────────────────────────────────────────────┘
+```
+
+## Code map
+
+### Anclax side
+
+- OpenAPI spec: `api/v1.yaml`
+- Generated OpenAPI types/handlers: `pkg/zgen/apigen/spec_gen.go`
+- HTTP handlers implementation: `pkg/handler/handler.go`
+- Wire graph: `wire/wire.go` + `wire/wire_gen.go`
+- App bootstrap: `cmd/main.go`
+
+### Symphony side
+
+- Workflow parsing + watcher: `pkg/symphony/workflow/*`
+- Effective config (defaults/validation): `pkg/symphony/config/config.go`
+- Prompt rendering: `pkg/symphony/template/renderer.go`
+- Runtime reload manager: `pkg/symphony/runtime/*`
+- Orchestrator loop + scheduler: `pkg/symphony/orchestrator/orchestrator.go`
+- Tracker adapter: `pkg/symphony/tracker/linear/*`
+- Workspace manager + hooks: `pkg/symphony/workspace/manager.go`
+- Codex app-server client: `pkg/symphony/codex/appserver.go`
+- Lifecycle wrapper: `pkg/symphony/control/manager.go`
+
+## Data flow details
+
+<Steps>
+  <Step>`runtime.Manager` 负责加载和热更新 `WORKFLOW.md`，保存最后一个有效 runtime。</Step>
+  <Step>`orchestrator` 周期性拉 tracker candidates，按规则挑选 issue 并调度 attempt。</Step>
+  <Step>每个 attempt 准备 workspace、启动 app-server session、执行若干 turn，并在 turn 间刷新 issue 状态。</Step>
+  <Step>结果被投影为 Snapshot，供 Console 和 API 使用。</Step>
+</Steps>

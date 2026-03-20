@@ -1,0 +1,62 @@
+---
+title: Snapshot Model
+description: Console 里最重要的对象，是一个可解释的运行时投影。
+---
+
+# Snapshot Model
+
+在 Synclax 里，UI 不应该直接读取底层日志来“猜系统状态”，而应该消费一个结构化 Snapshot。
+
+## Snapshot 由什么组成
+
+<Tabs items={["running", "retrying", "completed", "totals"]}>
+  <Tab>
+    当前正在执行的 issue 列表，重点展示 phase、workspace、最近事件与运行中上下文。
+  </Tab>
+  <Tab>
+    等待下次尝试的队列，最关键的是 `due_at` 和错误原因。
+  </Tab>
+  <Tab>
+    最近结束的 attempt 历史，用来回答“刚刚发生了什么”。它更偏 UX / 运营，而不是审计账本。
+  </Tab>
+  <Tab>
+    聚合的 token / seconds / 限流信息，帮助你观察吞吐与成本。
+  </Tab>
+</Tabs>
+
+## UI 渲染建议
+
+<Files>
+  <Folder defaultOpen name="Console panels">
+    <File name="health.tsx" />
+    <File name="controls.tsx" />
+    <File name="running-list.tsx" />
+    <File name="retry-queue.tsx" />
+    <File name="history.tsx" />
+    <File name="usage-summary.tsx" />
+  </Folder>
+</Files>
+
+### 1) 没有 `running` 也没有 `retrying`
+
+通常应显示为“空闲 / 等待候选任务”，而不是报错。
+
+### 2) `retrying` 非空
+
+应该明确告诉用户：
+
+- 为什么会重试
+- 下次 due_at 在什么时候
+- 这是不是正常的指数退避
+
+### 3) `running` 非空
+
+优先展示：
+
+1. 当前 issue identifier / title
+2. 当前 phase（例如 `PreparingWorkspace`、`StreamingTurn`）
+3. workspace 路径与最近事件
+
+<Callout type="idea" title="为什么 phase 很重要？">
+  因为对用户来说，“现在卡在哪一步”远比“进程还活着”更有解释力。
+</Callout>

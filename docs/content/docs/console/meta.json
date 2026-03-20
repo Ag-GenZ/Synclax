@@ -1,0 +1,5 @@
+{
+  "title": "Console",
+  "description": "面向使用者的产品界面说明。",
+  "pages": ["index", "overview", "snapshot-model"]
+}

@@ -1,0 +1,5 @@
+{
+  "title": "Synclax Docs",
+  "root": true,
+  "pages": ["index", "getting-started", "concepts", "console", "developer", "reference"]
+}

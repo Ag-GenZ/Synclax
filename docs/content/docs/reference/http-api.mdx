@@ -1,0 +1,76 @@
+---
+title: HTTP API Reference
+description: 主 API Server 暴露给 Console 与集成方的稳定接口。
+---
+
+# HTTP API Reference
+
+所有 API endpoint 都挂在 `/api/v1` 之下。OpenAPI spec 位于 `api/v1.yaml`。
+
+## Health
+
+### `GET /health`
+
+Liveness / readiness endpoint，用于确认 API Server 与 Symphony 的运行状态。
+
+```bash
+curl -sS http://localhost:2910/api/v1/health | jq .
+```
+
+返回中最重要的字段：
+
+- `status`
+- `symphony_running`
+- `symphony_workflow_path`
+- `symphony_last_error`
+
+## Symphony control
+
+### `GET /symphony/snapshot`
+
+```bash
+curl -sS http://localhost:2910/api/v1/symphony/snapshot | jq .
+```
+
+Snapshot 返回：
+
+- `running`
+- `retrying`
+- `completed`
+- `codex_totals`
+- `rate_limits`
+
+### `POST /symphony/start`
+
+```bash
+curl -sS -X POST http://localhost:2910/api/v1/symphony/start | jq .
+```
+
+可选 body：
+
+```json
+{
+  "workflow_path": "./WORKFLOW.md",
+  "http_port": 8089
+}
+```
+
+### `POST /symphony/stop`
+
+```bash
+curl -sS -X POST http://localhost:2910/api/v1/symphony/stop | jq .
+```
+
+## Demo endpoint
+
+### `GET /counter`
+
+```bash
+curl -sS http://localhost:2910/api/v1/counter | jq .
+```
+
+### `POST /counter`
+
+```bash
+curl -sS -X POST http://localhost:2910/api/v1/counter
+```

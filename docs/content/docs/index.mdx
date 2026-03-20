@@ -1,0 +1,99 @@
+---
+title: Documentation Hub
+description: 一页看懂 Synclax 文档分区、阅读顺序与站点能力。
+full: true
+---
+
+<Banner variant="rainbow">Synclax 文档现已迁移到 Fumadocs，分区、导航、视觉和富 MDX 组件已统一。</Banner>
+
+<div className="doc-kicker">Documentation Hub</div>
+
+# 一张总览图，把站点结构先看清楚
+
+Synclax 文档现在按 **Start Here / Concepts / Console / Developer / Reference** 五个主分区组织。先用
+ Start Here 跑通，再用 Concepts 建立系统心智模型，随后按角色进入 Console、Developer 或 Reference。
+
+<div className="doc-image-frame">
+  <ImageZoom
+    alt="Synclax documentation overview"
+    height={640}
+    src="/images/flow-hero.svg"
+    width={1200}
+  />
+</div>
+
+<Cards>
+  <Card
+    title="Start Here"
+    href="/docs/getting-started"
+    description="Overview、Quickstart、Configuration、Troubleshooting，给第一次接触 Synclax 的使用者。"
+  />
+  <Card
+    title="Concepts"
+    href="/docs/concepts"
+    description="解释控制循环、架构、状态投影与设计原则，避免只会点按钮却不理解系统。"
+  />
+  <Card
+    title="Console"
+    href="/docs/console"
+    description="把 Web Console 当成产品界面来讲，说明运行态、观测点与操作方式。"
+  />
+  <Card
+    title="Developer"
+    href="/docs/developer"
+    description="给仓库开发者的扩展指南、代码地图、Web UI 集成与生成代码流程。"
+  />
+  <Card
+    title="Reference"
+    href="/docs/reference"
+    description="WORKFLOW、HTTP API、SPEC 解读与 Mermaid 回归页，适合查细节。"
+  />
+</Cards>
+
+## 推荐阅读顺序
+
+<Steps>
+  <Step>
+    先读 [Overview](/docs/getting-started/overview) 和
+    [Quickstart](/docs/getting-started/quickstart)，知道系统怎么启动、成功信号是什么。
+  </Step>
+  <Step>
+    再读 [哲学理念](/docs/concepts/philosophy) 与
+    [系统架构](/docs/concepts/architecture)，建立“为什么要这样设计”的判断框架。
+  </Step>
+  <Step>
+    根据角色继续深入：
+    Console 面向使用者，Developer 面向仓库开发者，Reference 面向查契约和运行时细节的人。
+  </Step>
+</Steps>
+
+## 站点里有哪些“全功能组件”
+
+<Tabs items={["Structure", "Visuals", "Components"]}>
+  <Tab>
+    <Files>
+      <Folder defaultOpen name="content/docs">
+        <File name="index.mdx" />
+        <Folder defaultOpen name="getting-started">
+          <File name="overview.mdx" />
+          <File name="quickstart.mdx" />
+        </Folder>
+        <Folder name="concepts" />
+        <Folder name="console" />
+        <Folder name="developer" />
+        <Folder name="reference" />
+      </Folder>
+    </Files>
+  </Tab>
+  <Tab>
+    使用自定义字体、暖色底色、玻璃态卡片和 SVG 插图，让首页与文档页不再只是默认模板。
+  </Tab>
+  <Tab>
+    文中统一使用 `Cards`、`Callout`、`Tabs`、`Files`、`Steps`、`ImageZoom`、`Mermaid`，
+    让结构、提示、流程和图示都能直接嵌在内容里。
+  </Tab>
+</Tabs>
+
+<Callout type="idea" title="为什么要单独保留 Console 分区？">
+  因为 Synclax 的产品体验不是“某个 HTTP endpoint”，而是你如何通过 Console 观察与控制整个 orchestrator。
+</Callout>

@@ -1,0 +1,5 @@
+{
+  "title": "Developer",
+  "description": "给仓库开发者的代码地图、扩展指南与集成说明。",
+  "pages": ["index", "architecture", "developer-guide", "web-ui-integration", "codegen", "troubleshooting"]
+}

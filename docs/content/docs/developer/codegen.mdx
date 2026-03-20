@@ -1,0 +1,42 @@
+---
+title: Codegen
+description: Synclax 的 OpenAPI、SQLC 和 Wire 生成流程。
+---
+
+# Code Generation
+
+Synclax 遵循 Anclax 工作流：spec 和 SQL 是真相源，生成代码是层与层之间的契约。
+
+## 会生成什么
+
+- OpenAPI -> `pkg/zgen/apigen/*`
+- Tasks -> `pkg/zgen/taskgen/*`
+- SQLC -> `pkg/zgen/querier/*`
+- Wire DI -> `wire/wire_gen.go`
+
+## 什么时候运行 `anclax gen`
+
+当你修改以下任一内容时：
+
+- `api/v1.yaml`
+- `api/tasks.yaml`
+- `sql/migrations/*`
+- `sql/queries/*`
+- `wire/wire.go`
+
+```bash
+anclax gen
+```
+
+<Callout type="warning">
+  不要手改 `pkg/zgen/*` 或 `wire/wire_gen.go`。它们会被下一次生成覆盖。
+</Callout>
+
+## API 变更后的最短闭环
+
+<Steps>
+  <Step>修改 `api/v1.yaml`。</Step>
+  <Step>运行 `anclax gen`。</Step>
+  <Step>补齐 `pkg/handler/handler.go` 里新生成的接口实现。</Step>
+  <Step>如果 Wire 提示依赖图变化，修正 provider set 后重新生成。</Step>
+</Steps>
