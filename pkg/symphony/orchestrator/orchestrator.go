@@ -72,6 +72,10 @@ type attemptRunner interface {
 	RunAttempt(ctx context.Context, issue domain.Issue, attempt *int, onUpdate func(agent.Update)) (agent.Result, error)
 }
 
+type workflowBootstrapper interface {
+	EnsureSynclaxWorkflow(ctx context.Context) error
+}
+
 type StatsStore interface {
 	Load(ctx context.Context, maxAttempts int) (AgentTotals, map[string]any, []CompletedEntry, error)
 	Record(ctx context.Context, totals AgentTotals, rateLimits map[string]any, entry CompletedEntry) error
@@ -122,6 +126,9 @@ func (o *Orchestrator) Run(ctx context.Context, portOverride *int) error {
 
 	// Initial dependency build.
 	if err := o.applyRuntimeLocked(portOverride); err != nil {
+		return err
+	}
+	if err := o.bootstrapWorkflowTracker(ctx); err != nil {
 		return err
 	}
 
@@ -332,6 +339,26 @@ func (o *Orchestrator) getPollInterval() time.Duration {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	return o.cfg.Polling.Interval
+}
+
+func (o *Orchestrator) bootstrapWorkflowTracker(ctx context.Context) error {
+	o.mu.Lock()
+	tr := o.tracker
+	cfg := o.cfg
+	o.mu.Unlock()
+
+	if tr == nil {
+		return nil
+	}
+	if !linear.BoolParam(cfg.Tracker.Params, "bootstrap_synclax_workflow", false) {
+		return nil
+	}
+
+	bootstrapper, ok := tr.(workflowBootstrapper)
+	if !ok {
+		return nil
+	}
+	return bootstrapper.EnsureSynclaxWorkflow(ctx)
 }
 
 func newTracker(cfg symphonycfg.TrackerConfig) (tracker.Client, error) {

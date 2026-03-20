@@ -222,6 +222,7 @@ tracker:
   endpoint: https://api.linear.app/graphql
   api_key: \$LINEAR_API_KEY
   project_slug: \$LINEAR_PROJECT_SLUG
+  bootstrap_synclax_workflow: true
   active_states:
     - Todo
     - In Progress
