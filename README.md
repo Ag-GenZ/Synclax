@@ -83,6 +83,8 @@ pnpm, Git, and Codex installed, the fastest path is:
 
 This script will:
 
+- install missing `Docker`, `Go`, `Node.js`, `pnpm`, and `Git` with
+  Homebrew when available
 - start an isolated local PostgreSQL container
 - generate a managed `app.yaml`
 - generate `WORKFLOW.local.md`

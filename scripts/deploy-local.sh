@@ -34,11 +34,80 @@ DEPLOY_INFO_FILE="$RUNTIME_DIR/deploy-info.txt"
 
 mkdir -p "$BIN_DIR" "$PID_DIR" "$LOG_DIR" "$WORKSPACE_DIR"
 
+require_brew() {
+  if ! command -v brew >/dev/null 2>&1; then
+    echo "Homebrew is required to auto-install missing dependencies." >&2
+    echo "Install Homebrew first: https://brew.sh/" >&2
+    exit 1
+  fi
+}
+
 require_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
     echo "missing required command: $1" >&2
     exit 1
   fi
+}
+
+ensure_brew_formula() {
+  local cmd_name="$1"
+  local formula="$2"
+  if command -v "$cmd_name" >/dev/null 2>&1; then
+    return 0
+  fi
+  require_brew
+  echo "Installing missing dependency with Homebrew: $formula"
+  brew install "$formula"
+}
+
+ensure_brew_cask() {
+  local cmd_name="$1"
+  local cask="$2"
+  if command -v "$cmd_name" >/dev/null 2>&1; then
+    return 0
+  fi
+  require_brew
+  echo "Installing missing dependency with Homebrew cask: $cask"
+  brew install --cask "$cask"
+}
+
+wait_for_docker() {
+  for _ in $(seq 1 90); do
+    if docker info >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 2
+  done
+  echo "Docker is installed but the daemon is not ready." >&2
+  echo "Start Docker Desktop (or your Docker daemon) and rerun the script." >&2
+  exit 1
+}
+
+ensure_docker() {
+  if ! command -v docker >/dev/null 2>&1; then
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+      ensure_brew_cask docker docker
+    else
+      ensure_brew_formula docker docker
+    fi
+  fi
+
+  if docker info >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    open -ga Docker >/dev/null 2>&1 || true
+  fi
+  wait_for_docker
+}
+
+install_missing_dependencies() {
+  ensure_docker
+  ensure_brew_formula git git
+  ensure_brew_formula go go
+  ensure_brew_formula node node
+  ensure_brew_formula pnpm pnpm
 }
 
 is_pid_running() {
@@ -331,6 +400,7 @@ To enable Symphony against your Linear project:
 EOF
 }
 
+install_missing_dependencies
 require_cmd docker
 require_cmd curl
 require_cmd go
