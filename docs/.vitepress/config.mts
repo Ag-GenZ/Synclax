@@ -1,10 +1,10 @@
 import { withMermaid } from "vitepress-plugin-mermaid";
 import type { UserConfig } from "vitepress";
 
-const repository = process.env.GITHUB_REPOSITORY?.split("/")[1];
-const isGitHubActions = process.env.GITHUB_ACTIONS === "true";
-const isUserOrOrgSite = repository?.endsWith(".github.io");
-const base = isGitHubActions && repository && !isUserOrOrgSite ? `/${repository}/` : "/";
+// const repository = process.env.GITHUB_REPOSITORY?.split("/")[1];
+// const isGitHubActions = process.env.GITHUB_ACTIONS === "true";
+// const isUserOrOrgSite = repository?.endsWith(".github.io");
+const base = "/";
 
 export default withMermaid({
   base,
