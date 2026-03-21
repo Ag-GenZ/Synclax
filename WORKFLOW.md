@@ -177,7 +177,9 @@ The agent should be able to talk to Linear via the configured Linear MCP server.
    - If the ticket description/comment context includes `Validation`, `Test Plan`, or `Testing` sections, copy those requirements into the workpad as required checkboxes.
 7. Run a principal-style self-review of the plan and refine it in the comment.
 8. Before implementing, capture a concrete reproduction signal and record it in the workpad `Notes` section.
+   - Prefix every `Notes` entry with a local timestamp in `YYYY-MM-DD HH:MM` format.
 9. Run the `pull` skill to sync with latest `origin/main` before any code edits, then record the pull/sync result in the workpad `Notes`.
+   - Prefix the pull/sync note with a local timestamp in `YYYY-MM-DD HH:MM` format.
 10. Compact context and proceed to execution.
 
 ## PR feedback sweep protocol (required)
@@ -217,6 +219,7 @@ Use this only when completion is blocked by missing required tools or missing au
    - Prefer a targeted proof that directly demonstrates the behavior you changed.
    - Revert every temporary proof edit before commit/push.
    - Document these steps and outcomes in the workpad `Validation`/`Notes` sections.
+   - Prefix every new `Notes` entry with a local timestamp in `YYYY-MM-DD HH:MM` format.
 6. Re-check all acceptance criteria and close any gaps.
 7. Before every `git push` attempt, run the required validation for your scope and confirm it passes.
 8. Attach PR URL to the issue (prefer attachment; use workpad comment only if attachment is unavailable).
@@ -227,6 +230,7 @@ Use this only when completion is blocked by missing required tools or missing au
     - Add final handoff notes (commit + validation summary) in the same workpad comment.
     - Do not include PR URL in the workpad comment; keep PR linkage on the issue via attachment/link fields.
     - Add a short `### Confusions` section at the bottom when any part of task execution was unclear/confusing.
+    - Prefix every `Confusions` entry with a local timestamp in `YYYY-MM-DD HH:MM` format.
     - Do not post any additional completion summary comment.
 11. Before moving to `Human Review`, poll PR feedback and checks:
     - Run the full PR feedback sweep protocol.
@@ -307,9 +311,9 @@ Use this exact structure for the persistent workpad comment and keep it updated 
 
 ### Notes
 
-- <short progress note with timestamp>
+- [YYYY-MM-DD HH:MM] <short progress note>
 
 ### Confusions
 
-- <only include when something was confusing during execution>
+- [YYYY-MM-DD HH:MM] <only include when something was confusing during execution>
 ````
