@@ -65,9 +65,61 @@ Key capabilities:
 
 ### Prerequisites
 
-- Docker and Docker Compose
+- Docker
+- Go
+- Node.js + pnpm
+- Git
 - A [Linear](https://linear.app) account + API key
 - [Codex](https://github.com/openai/codex) installed on the machine that will execute agents
+
+### Local one-command deploy
+
+For local development on a machine that already has Docker, Go, Node.js,
+pnpm, Git, and Codex installed, the fastest path is:
+
+```bash
+./scripts/deploy-local.sh
+```
+
+This script will:
+
+- install missing `Docker`, `Go`, `Node.js`, `pnpm`, and `Git` with
+  Homebrew when available
+- start an isolated local PostgreSQL container
+- generate a managed `app.yaml`
+- generate `WORKFLOW.local.md`
+- build and start the Go API on `http://localhost:2910`
+- build and start the web dashboard on `http://localhost:3000`
+
+Open:
+
+- Dashboard: `http://localhost:3000`
+- API health: `http://localhost:2910/api/v1/health`
+
+If you have not configured Linear yet, edit:
+
+```bash
+tmp/local-deploy/synclax.env
+```
+
+and set:
+
+```env
+LINEAR_API_KEY=your_linear_api_key
+LINEAR_PROJECT_SLUG=your_linear_project_slug
+```
+
+Then rerun:
+
+```bash
+./scripts/deploy-local.sh
+```
+
+To stop the local services:
+
+```bash
+./scripts/stop-local.sh
+```
 
 ### Deployment modes
 

@@ -38,6 +38,17 @@ func (f *fakeTracker) FetchIssueStatesByIDs(_ context.Context, ids []string) ([]
 	return out, nil
 }
 
+type fakeBootstrapTracker struct {
+	fakeTracker
+	calls int
+	err   error
+}
+
+func (f *fakeBootstrapTracker) EnsureSynclaxWorkflow(_ context.Context) error {
+	f.calls++
+	return f.err
+}
+
 type fakeRunner struct {
 	called chan struct{}
 	res    agent.Result
@@ -212,6 +223,53 @@ codex:
 	defer o.mu.Unlock()
 	if len(o.claimed) != 0 {
 		t.Fatalf("expected no claims, got %#v", o.claimed)
+	}
+}
+
+func TestBootstrapWorkflowTracker_RunsWhenEnabled(t *testing.T) {
+	workflow := `---
+tracker:
+  kind: linear
+  api_key: x
+  project_slug: proj
+  bootstrap_synclax_workflow: true
+codex:
+  command: "true"
+---`
+	o, cancel := mustOrchestrator(t, workflow)
+	t.Cleanup(cancel)
+
+	tr := &fakeBootstrapTracker{}
+	o.tracker = tr
+
+	if err := o.bootstrapWorkflowTracker(context.Background()); err != nil {
+		t.Fatalf("bootstrapWorkflowTracker error: %v", err)
+	}
+	if tr.calls != 1 {
+		t.Fatalf("expected 1 bootstrap call, got %d", tr.calls)
+	}
+}
+
+func TestBootstrapWorkflowTracker_SkipsWhenDisabled(t *testing.T) {
+	workflow := `---
+tracker:
+  kind: linear
+  api_key: x
+  project_slug: proj
+codex:
+  command: "true"
+---`
+	o, cancel := mustOrchestrator(t, workflow)
+	t.Cleanup(cancel)
+
+	tr := &fakeBootstrapTracker{}
+	o.tracker = tr
+
+	if err := o.bootstrapWorkflowTracker(context.Background()); err != nil {
+		t.Fatalf("bootstrapWorkflowTracker error: %v", err)
+	}
+	if tr.calls != 0 {
+		t.Fatalf("expected 0 bootstrap calls, got %d", tr.calls)
 	}
 }
 

@@ -209,7 +209,8 @@ func (c *Client) doGraphQL(ctx context.Context, query string, variables map[stri
 		return nil, &tracker.Error{Category: "linear_unknown_payload", Err: err}
 	}
 	if len(decoded.Errors) > 0 {
-		return nil, &tracker.Error{Category: "linear_graphql_errors", Err: errors.New("graphql errors present")}
+		errBody, _ := json.Marshal(decoded.Errors)
+		return nil, &tracker.Error{Category: "linear_graphql_errors", Err: errors.New(string(errBody))}
 	}
 	if len(decoded.Data) == 0 {
 		return nil, &tracker.Error{Category: "linear_unknown_payload", Err: errors.New("missing data")}
