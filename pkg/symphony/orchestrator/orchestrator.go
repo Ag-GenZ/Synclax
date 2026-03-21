@@ -1141,6 +1141,7 @@ func (o *Orchestrator) onWorkerExit(ctx context.Context, entry *RunningEntry, re
 
 	o.mu.Lock()
 	cfg := o.cfg
+	tr := o.tracker
 	ws := o.workspace
 	suppressRetry := entry.suppressRetry
 	cleanupOnExit := entry.cleanupOnExit
@@ -1188,8 +1189,10 @@ func (o *Orchestrator) onWorkerExit(ctx context.Context, entry *RunningEntry, re
 		finalIssue = entry.Issue
 	}
 
+	finalIssue = o.refreshIssueStateForExit(ctx, tr, cfg, entry.IssueID, finalIssue)
+	activeAtExit := isActiveState(finalIssue.State, cfg.Tracker.ActiveStates)
 	terminalAtExit := isTerminal(finalIssue.State, cfg.Tracker.TerminalStates)
-	if err == nil && !suppressRetry && !terminalAtExit {
+	if err == nil && !suppressRetry && activeAtExit && !terminalAtExit {
 		// Queue continuation retry as early as possible to reduce races with callers that
 		// observe retries immediately after dispatch.
 		o.scheduleRetry(ctx, entry.IssueID, entry.Identifier, 1, "continuation", nil, 1*time.Second)
@@ -1265,6 +1268,10 @@ func (o *Orchestrator) onWorkerExit(ctx context.Context, entry *RunningEntry, re
 			o.releaseClaim(entry.IssueID)
 			return
 		}
+		if !activeAtExit {
+			o.releaseClaim(entry.IssueID)
+			return
+		}
 
 		return
 	}
@@ -1288,6 +1295,37 @@ func (o *Orchestrator) onWorkerExit(ctx context.Context, entry *RunningEntry, re
 
 	next := nextAttempt(entry.Attempt)
 	o.scheduleRetry(ctx, entry.IssueID, entry.Identifier, next, "backoff", errMsg, backoffDelay(next, cfg.Agent.MaxRetryBackoff))
+}
+
+func (o *Orchestrator) refreshIssueStateForExit(ctx context.Context, tr tracker.Client, cfg symphonycfg.EffectiveConfig, issueID string, fallback domain.Issue) domain.Issue {
+	if tr == nil || strings.TrimSpace(issueID) == "" {
+		return fallback
+	}
+
+	refreshCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	refreshed, err := tr.FetchIssueStatesByIDs(refreshCtx, []string{issueID})
+	if err != nil {
+		log.Printf("symphony continuation_refresh status=warning issue_id=%s error=%v", issueID, err)
+		return fallback
+	}
+	if len(refreshed) == 0 || strings.TrimSpace(refreshed[0].State) == "" {
+		return fallback
+	}
+
+	out := fallback
+	out.ID = coalesceTrimmed(out.ID, refreshed[0].ID)
+	out.Identifier = coalesceTrimmed(out.Identifier, refreshed[0].Identifier)
+	out.State = refreshed[0].State
+	return out
+}
+
+func coalesceTrimmed(current, next string) string {
+	if strings.TrimSpace(current) != "" {
+		return current
+	}
+	return strings.TrimSpace(next)
 }
 
 func (o *Orchestrator) stopRunning(issueID string, phase RunPhase, cleanupWorkspace bool) {

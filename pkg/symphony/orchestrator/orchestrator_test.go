@@ -226,6 +226,99 @@ codex:
 	}
 }
 
+func TestOnWorkerExit_SkipsContinuationWhenIssueBecomesNonActive(t *testing.T) {
+	workflow := `---
+tracker:
+  kind: linear
+  api_key: x
+  project_slug: proj
+  active_states:
+    - Todo
+    - In Progress
+    - Rework
+    - Merging
+  terminal_states:
+    - Done
+codex:
+  command: "true"
+---`
+	o, cancel := mustOrchestrator(t, workflow)
+	t.Cleanup(cancel)
+
+	o.tracker = &fakeTracker{
+		statesByID: map[string]string{"i1": "Human Review"},
+	}
+	o.claim("i1")
+
+	entry := &RunningEntry{
+		Issue:      domain.Issue{ID: "i1", Identifier: "ABC-1", Title: "Test", State: "In Progress"},
+		IssueID:    "i1",
+		Identifier: "ABC-1",
+		StartedAt:  time.Now().Add(-time.Second),
+	}
+	res := agent.Result{
+		FinalIssue: domain.Issue{ID: "i1", Identifier: "ABC-1", Title: "Test", State: "In Progress"},
+	}
+
+	o.onWorkerExit(context.Background(), entry, res, nil)
+
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if retry := o.retries["i1"]; retry != nil {
+		t.Fatalf("expected no continuation retry, got %#v", retry)
+	}
+	if _, ok := o.claimed["i1"]; ok {
+		t.Fatal("expected issue claim to be released")
+	}
+}
+
+func TestOnWorkerExit_QueuesContinuationWhenIssueStaysActive(t *testing.T) {
+	workflow := `---
+tracker:
+  kind: linear
+  api_key: x
+  project_slug: proj
+  active_states:
+    - Todo
+    - In Progress
+    - Rework
+    - Merging
+  terminal_states:
+    - Done
+codex:
+  command: "true"
+---`
+	o, cancel := mustOrchestrator(t, workflow)
+	t.Cleanup(cancel)
+
+	o.tracker = &fakeTracker{
+		statesByID: map[string]string{"i1": "In Progress"},
+	}
+	o.claim("i1")
+
+	entry := &RunningEntry{
+		Issue:      domain.Issue{ID: "i1", Identifier: "ABC-1", Title: "Test", State: "In Progress"},
+		IssueID:    "i1",
+		Identifier: "ABC-1",
+		StartedAt:  time.Now().Add(-time.Second),
+	}
+	res := agent.Result{
+		FinalIssue: domain.Issue{ID: "i1", Identifier: "ABC-1", Title: "Test", State: "In Progress"},
+	}
+
+	o.onWorkerExit(context.Background(), entry, res, nil)
+
+	o.mu.Lock()
+	retry := o.retries["i1"]
+	o.mu.Unlock()
+	if retry == nil {
+		t.Fatal("expected continuation retry")
+	}
+	if retry.timerHandle != nil {
+		retry.timerHandle.Stop()
+	}
+}
+
 func TestBootstrapWorkflowTracker_RunsWhenEnabled(t *testing.T) {
 	workflow := `---
 tracker:
