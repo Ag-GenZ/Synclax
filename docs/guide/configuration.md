@@ -122,17 +122,32 @@ cp WORKFLOW.md.example WORKFLOW.md
 
 ### 最小可用字段（跑起来必须有）
 
-要让 Symphony 真正能派发任务（从 Linear 拉 issue 并运行 agent），你至少需要：
+要让 Symphony 真正能派发任务（从 tracker 拉 issue 并运行 agent），你至少需要一种 tracker 配置：
 
-- `tracker.project_slug`
-- `tracker.api_key`（推荐写 `$LINEAR_API_KEY`）
-- `codex.command`（默认是 `codex app-server`，不填也会有默认值，但你要确保运行环境里存在该命令）
+- Linear
+  - `tracker.kind: linear`
+  - `tracker.project_slug`
+  - `tracker.api_key`（推荐写 `$LINEAR_API_KEY`）
+- GitHub Projects v2
+  - `tracker.kind: github`
+  - `tracker.project_owner`
+  - `tracker.project_number`
+  - `tracker.repository`
+  - `tracker.token`（推荐写 `$GITHUB_TOKEN`）
+  - 可选 `tracker.state_field`，默认 `Status`
 
-并设置：
+并设置对应环境变量，例如：
 
 ```bash
 export LINEAR_API_KEY='你的 Linear API Key'
+export GITHUB_TOKEN='你的 GitHub PAT'
 ```
+
+GitHub 还需要注意：
+
+- `tracker.state_field` 必须已经存在于 Project v2 中，并且必须是 single-select 字段
+- 该字段的 option 名称必须与 `tracker.active_states` / `tracker.terminal_states` 中使用的状态名完全一致
+- v1 只支持一个 Project v2 + 一个 repository 的工作流
 
 ::: tip
 更完整的字段解释与模板绑定变量见：`/reference/workflow`（后续我们也会把它完全中文化扩写）。
@@ -161,4 +176,3 @@ curl -sS -X POST http://localhost:2910/api/v1/symphony/start \
 
 - `http_port: -1`：强制关闭 Symphony debug server（即使 `WORKFLOW.md` 设置了 `server.port`）
 - 如果 Symphony 已经在运行，再传“不同的” `workflow_path` 或 `http_port`，当前实现会返回 `409 Conflict`（避免运行中热切换造成歧义）
-

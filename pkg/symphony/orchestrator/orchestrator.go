@@ -25,6 +25,7 @@ import (
 	"github.com/wibus-wee/synclax/pkg/symphony/provider"
 	"github.com/wibus-wee/synclax/pkg/symphony/runtime"
 	"github.com/wibus-wee/synclax/pkg/symphony/tracker"
+	"github.com/wibus-wee/synclax/pkg/symphony/tracker/github"
 	"github.com/wibus-wee/synclax/pkg/symphony/tracker/linear"
 	"github.com/wibus-wee/synclax/pkg/symphony/workspace"
 )
@@ -350,7 +351,7 @@ func (o *Orchestrator) bootstrapWorkflowTracker(ctx context.Context) error {
 	if tr == nil {
 		return nil
 	}
-	if !linear.BoolParam(cfg.Tracker.Params, "bootstrap_synclax_workflow", false) {
+	if !tracker.BoolParam(cfg.Tracker.Params, "bootstrap_synclax_workflow", false) {
 		return nil
 	}
 
@@ -363,6 +364,8 @@ func (o *Orchestrator) bootstrapWorkflowTracker(ctx context.Context) error {
 
 func newTracker(cfg symphonycfg.TrackerConfig) (tracker.Client, error) {
 	switch cfg.Kind {
+	case "github":
+		return github.NewFromConfig(cfg)
 	case "linear":
 		return linear.NewFromConfig(cfg)
 	default:

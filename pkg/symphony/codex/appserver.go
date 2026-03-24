@@ -40,9 +40,12 @@ type AppServerOptions struct {
 	ReadTimeout    time.Duration
 	TurnTimeout    time.Duration
 
-	LinearEndpoint string
-	LinearAPIKey   string
-	LinearTimeout  time.Duration
+	TrackerKind        string
+	LinearEndpoint     string
+	LinearAPIKey       string
+	GitHubEndpoint     string
+	GitHubToken        string
+	DynamicToolTimeout time.Duration
 }
 
 func NewAppServer(opts AppServerOptions) *AppServer {
@@ -56,9 +59,12 @@ func NewAppServer(opts AppServerOptions) *AppServer {
 	}
 
 	tools := newDynamicTools(dynamicToolsOptions{
+		TrackerKind:    opts.TrackerKind,
 		LinearEndpoint: opts.LinearEndpoint,
 		LinearAPIKey:   opts.LinearAPIKey,
-		Timeout:        opts.LinearTimeout,
+		GitHubEndpoint: opts.GitHubEndpoint,
+		GitHubToken:    opts.GitHubToken,
+		Timeout:        opts.DynamicToolTimeout,
 	})
 	return &AppServer{
 		command:        strings.TrimSpace(opts.Command),
@@ -72,9 +78,9 @@ func NewAppServer(opts AppServerOptions) *AppServer {
 }
 
 type Session struct {
-	threadID string
-	proc     process
-	client   *rpcClient
+	threadID   string
+	proc       process
+	client     *rpcClient
 	workerHost *string
 
 	mu       sync.Mutex
@@ -584,7 +590,7 @@ func (c *rpcClient) readLoop() {
 					res = dynamicToolResponse(false, map[string]any{
 						"error": map[string]any{
 							"message":        "Dynamic tools are not configured.",
-							"supportedTools": []any{linearGraphQLToolName},
+							"supportedTools": toolSpecNames(nil),
 						},
 					})
 				}

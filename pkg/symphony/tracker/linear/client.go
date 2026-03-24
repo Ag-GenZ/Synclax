@@ -79,9 +79,9 @@ func New(opts Options) (*Client, error) {
 //   - api_key (string, required)
 //   - project_slug (string, required)
 func NewFromConfig(cfg config.TrackerConfig) (*Client, error) {
-	endpoint := StringParam(cfg.Params, "endpoint", "https://api.linear.app/graphql")
-	apiKey := StringParam(cfg.Params, "api_key", "")
-	projectSlug := StringParam(cfg.Params, "project_slug", "")
+	endpoint := tracker.StringParam(cfg.Params, "endpoint", "https://api.linear.app/graphql")
+	apiKey := tracker.StringParam(cfg.Params, "api_key", "")
+	projectSlug := tracker.StringParam(cfg.Params, "project_slug", "")
 
 	// Fallback: check LINEAR_API_KEY env var if api_key not in params.
 	if apiKey == "" {
@@ -96,26 +96,6 @@ func NewFromConfig(cfg config.TrackerConfig) (*Client, error) {
 		PageSize:     cfg.PageSize,
 		Timeout:      cfg.Timeout,
 	})
-}
-
-// StringParam extracts a string value from a params map with a fallback default.
-func StringParam(params map[string]any, key, fallback string) string {
-	if params == nil {
-		return fallback
-	}
-	v, ok := params[key]
-	if !ok {
-		return fallback
-	}
-	s, ok := v.(string)
-	if !ok {
-		return fallback
-	}
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return fallback
-	}
-	return s
 }
 
 func (c *Client) FetchCandidateIssues(ctx context.Context) ([]domain.Issue, error) {

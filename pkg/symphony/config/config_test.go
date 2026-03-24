@@ -103,6 +103,29 @@ func TestFromWorkflowConfig_ParamsEnvResolution(t *testing.T) {
 	}
 }
 
+func TestFromWorkflowConfig_GitHubTokenEnvResolution(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "gh-token")
+
+	cfg, err := FromWorkflowConfig(map[string]any{
+		"tracker": map[string]any{
+			"kind":           "github",
+			"project_owner":  "octo-org",
+			"project_number": 7,
+			"repository":     "octo-org/repo",
+			"token":          "$GITHUB_TOKEN",
+		},
+	})
+	if err != nil {
+		t.Fatalf("FromWorkflowConfig error: %v", err)
+	}
+	if cfg.Tracker.Kind != "github" {
+		t.Fatalf("expected github tracker kind, got %q", cfg.Tracker.Kind)
+	}
+	if cfg.Tracker.Params["token"] != "gh-token" {
+		t.Fatalf("expected resolved github token, got %q", cfg.Tracker.Params["token"])
+	}
+}
+
 func TestFromWorkflowConfig_EmptyKind_DefaultsToLinear(t *testing.T) {
 	cfg, err := FromWorkflowConfig(map[string]any{
 		"tracker": map[string]any{},

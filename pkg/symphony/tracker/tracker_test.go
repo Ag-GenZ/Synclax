@@ -8,6 +8,12 @@ func TestSupported_Linear(t *testing.T) {
 	}
 }
 
+func TestSupported_GitHub(t *testing.T) {
+	if !Supported("github") {
+		t.Fatal("expected github to be supported")
+	}
+}
+
 func TestSupported_Unknown(t *testing.T) {
 	if Supported("jira") {
 		t.Fatal("expected jira to not be supported")

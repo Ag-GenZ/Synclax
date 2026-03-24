@@ -88,28 +88,6 @@ type issueUpdateEnvelope struct {
 	} `json:"issueUpdate"`
 }
 
-func BoolParam(params map[string]any, key string, fallback bool) bool {
-	if params == nil {
-		return fallback
-	}
-	v, ok := params[key]
-	if !ok {
-		return fallback
-	}
-	switch t := v.(type) {
-	case bool:
-		return t
-	case string:
-		switch strings.ToLower(strings.TrimSpace(t)) {
-		case "true", "1", "yes", "y", "on":
-			return true
-		case "false", "0", "no", "n", "off":
-			return false
-		}
-	}
-	return fallback
-}
-
 func (c *Client) EnsureSynclaxWorkflow(ctx context.Context) error {
 	meta, err := c.fetchProjectTeamStates(ctx)
 	if err != nil {

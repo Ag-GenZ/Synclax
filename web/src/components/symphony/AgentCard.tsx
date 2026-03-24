@@ -140,7 +140,7 @@ export const AgentCard = memo(function AgentCard({ entry }: { entry: SymphonyRun
                   onSelect={() => window.open(issue.url!, "_blank", "noopener,noreferrer")}
                 >
                   <ExternalLinkIcon className="size-3.5" />
-                  Open in Linear
+                  Open issue
                 </MenuItem>
               )}
               <MenuSeparator />

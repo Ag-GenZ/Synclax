@@ -38,8 +38,31 @@ tracker:
 
 Notes:
 
-- Only `kind: linear` is supported right now.
-- `api_key` may use `$ENV_VAR` expansion.
+- Supported kinds:
+  - `linear` with `endpoint`, `api_key`, and `project_slug`
+  - `github` with `endpoint`, `token`, `project_owner`, `project_number`, `repository`, and optional `state_field`
+- `tracker.kind` defaults to `linear` when omitted.
+- Any tracker param may use `$ENV_VAR` expansion.
+- GitHub defaults:
+  - `endpoint: https://api.github.com/graphql`
+  - `state_field: Status`
+- GitHub `repository` is limited to one repo per workflow in v1. Use `owner/repo` to make the repo owner explicit when it differs from `project_owner`.
+- For GitHub, the configured `state_field` must already exist on the Project v2 and must be a single-select field whose option names match your workflow state names exactly.
+
+GitHub example:
+
+```yaml
+tracker:
+  kind: github
+  endpoint: https://api.github.com/graphql
+  token: $GITHUB_TOKEN
+  project_owner: your-org-or-user
+  project_number: 1
+  repository: your-org-or-user/your-repo
+  state_field: Status
+  active_states: ["Todo", "In Progress"]
+  terminal_states: ["Done", "Closed", "Cancelled", "Canceled", "Duplicate"]
+```
 
 ### `provider`
 
@@ -63,12 +86,19 @@ Currently supported:
 
 - `linear_graphql`: execute raw Linear GraphQL queries/mutations using Symphony’s configured
   Linear auth.
+- `github_graphql`: execute raw GitHub GraphQL queries/mutations using Symphony’s configured
+  GitHub auth.
 
 Requirements:
 
-- `tracker.kind: linear`
-- `tracker.endpoint` points to Linear GraphQL (default is `https://api.linear.app/graphql`)
-- `tracker.api_key` is set (or `$LINEAR_API_KEY` is available in the environment)
+- `linear_graphql`
+  - `tracker.kind: linear`
+  - `tracker.endpoint` points to Linear GraphQL (default is `https://api.linear.app/graphql`)
+  - `tracker.api_key` is set (or `$LINEAR_API_KEY` is available in the environment)
+- `github_graphql`
+  - `tracker.kind: github`
+  - `tracker.endpoint` points to GitHub GraphQL (default is `https://api.github.com/graphql`)
+  - `tracker.token` is set (or `$GITHUB_TOKEN` is available in the environment)
 
 This is what the repo-level `.codex/skills/linear` skill expects.
 
@@ -206,7 +236,7 @@ Available bindings:
 Example:
 
 ```md
-You are working on a Linear issue.
+You are working on an issue.
 
 - Title: {{ issue.title }}
 - Identifier: {{ issue.identifier }}

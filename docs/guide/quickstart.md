@@ -60,10 +60,11 @@ volumes:
 
 ## 1) 启动环境（Docker Compose）
 
-在仓库根目录创建 `.env` 文件：
+在仓库根目录创建 `.env` 文件。Linear 和 GitHub Projects v2 二选一即可：
 
 ```bash
 echo "LINEAR_API_KEY=lin_api_xxxx" > .env
+echo "GITHUB_TOKEN=ghp_xxxx" >> .env
 ```
 
 然后执行：
@@ -94,7 +95,7 @@ LINEAR_API_KEY=lin_api_xxx docker compose -f docker-compose.full.yaml up -d
 
 Symphony 通过 `WORKFLOW.md` 读取：
 
-- Linear tracker 配置（要跑起来必须有）
+- tracker 配置（Linear 或 GitHub Projects v2，跑起来必须有）
 - 轮询间隔、workspace 根目录、hook 脚本
 - Codex app-server 命令与超时
 - （可选）Symphony debug HTTP server 端口
@@ -105,19 +106,35 @@ Symphony 通过 `WORKFLOW.md` 读取：
 cp WORKFLOW.md.example WORKFLOW.md
 ```
 
-然后你至少需要配置（在 `WORKFLOW.md` YAML front matter 中）：
+然后你至少需要配置一种 tracker（在 `WORKFLOW.md` YAML front matter 中）：
 
-- `tracker.project_slug`
-- `tracker.api_key`（推荐直接写 `$LINEAR_API_KEY`）
+- Linear
+  - `tracker.kind: linear`
+  - `tracker.project_slug`
+  - `tracker.api_key`（推荐直接写 `$LINEAR_API_KEY`）
+- GitHub Projects v2
+  - `tracker.kind: github`
+  - `tracker.project_owner`
+  - `tracker.project_number`
+  - `tracker.repository`
+  - `tracker.token`（推荐直接写 `$GITHUB_TOKEN`）
+  - 可选 `tracker.state_field`，默认 `Status`
 
-并在环境变量里提供：
+并在环境变量里提供对应 token：
 
 ```bash
 export LINEAR_API_KEY='你的 Linear API Key'
+export GITHUB_TOKEN='你的 GitHub PAT'
 ```
 
+GitHub 模式额外要求：
+
+- `tracker.state_field` 必须是目标 Project v2 中已经存在的 single-select 字段
+- 字段 option 名称要和工作流状态名一致
+- v1 只支持一个 repository
+
 ::: warning
-如果缺少 `tracker.api_key` 或 `tracker.project_slug`，Symphony 启动后会在 dispatch preflight 阶段拒绝派发任务；你会在 Snapshot 中看到它一直空跑。
+如果缺少所选 tracker 的必要字段（例如 Linear 的 `tracker.api_key` / `tracker.project_slug`，或 GitHub 的 `tracker.token` / `tracker.project_owner` / `tracker.project_number` / `tracker.repository`），Symphony 启动后会在 dispatch preflight 阶段拒绝派发任务；你会在 Snapshot 中看到它一直空跑。
 :::
 
 ## 3) 启动 Web Console（前端）
@@ -161,7 +178,7 @@ http://localhost:3000
 
 常见原因：
 
-- Linear 配置不完整：`LINEAR_API_KEY`、`tracker.project_slug`
+- tracker 配置不完整：`LINEAR_API_KEY` + `tracker.project_slug`，或 `GITHUB_TOKEN` + `tracker.project_owner/project_number/repository`
 - Issue 的 state 不在 `tracker.active_states`
 - Issue state 已经在 `terminal_states`
 - Issue 是 `Todo` 且存在未完成 blocker（当前实现会跳过）
