@@ -1,32 +1,133 @@
 ---
 title: Configuration
-description: 应用层 + WORKFLOW.md 两层配置如何配到能跑能联调。
+description: 先分清“脚本托管配置”和“手动配置”，再改对地方。
 ---
 
-# 配置（第一层：能跑 + 能联调）
+如果你已经按 [Quickstart](/docs/getting-started/quickstart) 走了 `./scripts/deploy-local.sh`，先记住一件事：
 
-Synclax 的配置分两层：
+**你现在看到的配置，不一定都应该手改。**
 
-1. **应用层配置**：`app.yaml` + 环境变量 `MYAPP_...`（影响 Anclax 服务与 Synclax 集成）
-2. **Symphony 工作流**：`WORKFLOW.md`（影响 orchestrator 的 tracker/codex/workspace/polling 等行为）
+Synclax 目前有两种完全不同的配置路径：
 
-这页只讲“第一层需要的部分”，目标是让你在本地或开发环境里**稳定跑起来并能联调 UI**。
+1. **本地一键部署路径**
+   `./scripts/deploy-local.sh` 生成并管理 `app.yaml`、`WORKFLOW.local.md` 和本地运行信息
+2. **手动启动路径**
+   你自己维护 `app.yaml`、`WORKFLOW.md`、`docker compose` 和前端进程
 
-## A. 应用层配置：`app.yaml` 与 `MYAPP_...`
+这页的目标，是让你先判断自己在哪条路径上，再去改真正应该改的文件。
+
+## 先判断你属于哪种启动方式
+
+### 情况 A：你跑的是 `./scripts/deploy-local.sh`
+
+这是当前 README 里的**推荐路径**。
+
+这条路径下，最重要的不是手写配置文件，而是这几个脚本生成物：
+
+- `tmp/local-deploy/synclax.env`
+  你应该补 `LINEAR_API_KEY` 和 `LINEAR_PROJECT_SLUG` 的地方。
+- `app.yaml`
+  由脚本生成，告诉 API 去连哪个本地 DB、使用哪个 workflow。
+- `WORKFLOW.local.md`
+  由脚本生成，作为本地部署专用 workflow。
+- `tmp/local-deploy/deploy-info.txt`
+  记录 API、Web、Workflow 和 env 文件位置。
+
+<Callout type="tip" title="这条路径下先改 env，不要先改 yaml">
+  如果你的目标只是把本地环境跑通，优先编辑 `tmp/local-deploy/synclax.env`，然后重新执行
+  `./scripts/deploy-local.sh`。不要把第一步建立在手改一堆脚本生成文件上。
+</Callout>
+
+### 情况 B：你是手动 `docker compose up` / 手动起前端
+
+这时你才真正需要自己维护：
+
+- `app.yaml`
+- `WORKFLOW.md`
+- 环境变量 `MYAPP_*`、`LINEAR_API_KEY`
+- `docker-compose.yaml` / `docker-compose.full.yaml`
+
+下面的章节主要讲这两种路径分别该怎么改。
+
+## A. 一键部署路径：你真正该改什么
+
+### 1) 改 Linear 凭据
+
+编辑：
+
+```text
+tmp/local-deploy/synclax.env
+```
+
+最少补这两个值：
+
+```text
+LINEAR_API_KEY=your_linear_api_key
+LINEAR_PROJECT_SLUG=your_linear_project_slug
+```
+
+然后重新执行：
+
+```bash
+./scripts/deploy-local.sh
+```
+
+### 2) 理解脚本生成的 `app.yaml`
+
+`deploy-local.sh` 会生成一个受脚本管理的 `app.yaml`，核心结构大致是：
+
+```yaml
+# managed-by: scripts/deploy-local.sh
+anclax:
+  port: 2910
+  pg:
+    dsn: postgres://...
+
+symphony:
+  workflow_path: ./WORKFLOW.local.md
+  http_port: 8089
+```
+
+这里最重要的不是具体值，而是两个事实：
+
+- API 端口、DB DSN、workflow 路径，已经由脚本给你串起来了
+- 只要你继续使用本地一键部署路径，就不应该把 `app.yaml` 当成主要入口手工维护
+
+### 3) 理解脚本生成的 `WORKFLOW.local.md`
+
+`deploy-local.sh` 也会生成 `WORKFLOW.local.md`。它会自动填入：
+
+- `tracker.api_key: $LINEAR_API_KEY`
+- `tracker.project_slug: $LINEAR_PROJECT_SLUG`
+- 本地日志路径
+- 本地 workspace 根目录
+- `codex.command`
+- 本地 debug server 端口
+
+如果你只是为了把系统跑通，不需要先自己从空白开始写一份新的 workflow。
+
+<Callout type="warning" title="什么时候再去手改脚本生成文件">
+  只有当你明确要脱离 `deploy-local.sh` 这条路径，或者你已经知道自己要长期维护本地 workflow 模板时，
+  才值得直接编辑 `WORKFLOW.local.md` 和 `app.yaml`。
+</Callout>
+
+## B. 手动路径：`app.yaml` 与 `MYAPP_*`
+
+当你不再依赖 `deploy-local.sh`，而是自己起 API / DB / Web 时，应用层配置才变成你的主要入口。
 
 Synclax 使用 Anclax 的配置加载逻辑：
 
-- 如果当前工作目录存在 `app.yaml`，会读取它（YAML）
-- 所有 `MYAPP_` 开头的环境变量会覆盖 `app.yaml` 的同名配置
+- 当前工作目录存在 `app.yaml` 时，会先读取它
+- `MYAPP_...` 环境变量会覆盖 `app.yaml` 的同名配置
 
-> 映射规则：环境变量使用 `_` 表示层级（会被转成嵌套 key）。
-> 例如 `MYAPP_ANCLAX_PORT=2910` 会映射为 `anclax.port: 2910`。
+例如：
 
-### 1) 最小可用：API Server + DB
+```bash
+export MYAPP_ANCLAX_PORT=2910
+export MYAPP_ANCLAX_PG_DSN='postgres://postgres:postgres@localhost:5432/synclax'
+```
 
-在开发环境里最核心的是 `anclax` 配置（端口 + PG DSN）。
-
-`app.yaml` 示例：
+会覆盖：
 
 ```yaml
 anclax:
@@ -35,65 +136,93 @@ anclax:
     dsn: postgres://postgres:postgres@localhost:5432/synclax
 ```
 
-环境变量示例（推荐用于本地/CI）：
+### 最小可用 `app.yaml`
 
-```bash
-export MYAPP_ANCLAX_PORT=2910
-export MYAPP_ANCLAX_PG_DSN='postgres://postgres:postgres@localhost:5432/synclax'
-```
-
-<Callout type="tip">
-`docker-compose.yaml` 已经为容器内设置了 `MYAPP_ANCLAX_PORT` 与 `MYAPP_ANCLAX_PG_DSN`，你通常不需要再手动设置。
-</Callout>
-
-### 2) Synclax 集成：让 API Server 能控制 Symphony
-
-Synclax 在应用层增加了 `symphony` 配置块，支持配置多个 workflow：
+README 里的最小应用配置大致是：
 
 ```yaml
+anclax:
+  port: 2910
+  pg:
+    dsn: postgres://postgres:postgres@localhost:5432/synclax
+
 symphony:
   workflow_paths:
     - ./WORKFLOW.md
-  # 或单个：
-  # workflow_path: ./WORKFLOW.md
-  # http_port: 8089   # 可选：开启 Symphony debug server（仅 127.0.0.1）
+  http_port: 8089
 ```
 
-等价环境变量：
+如果你只跑单个 workflow，也可以使用：
+
+```yaml
+symphony:
+  workflow_path: ./WORKFLOW.md
+  http_port: 8089
+```
+
+## C. 手动路径：`WORKFLOW.md`
+
+手动模式下，`WORKFLOW.md` 才是 Symphony 的主配置文件。
+
+先复制模板：
 
 ```bash
-export MYAPP_SYMPHONY_HTTP_PORT=8089
+cp WORKFLOW.md.example WORKFLOW.md
 ```
 
-字段含义：
+最少需要补这些字段：
 
-- `workflow_paths`： Symphony 加载的 `WORKFLOW.md` 路径列表（支持多 workflow 并发）
-- `workflow_path`：单个 workflow 的简写，与 `workflow_paths: [./WORKFLOW.md]` 等价
-- `http_port`：Symphony debug HTTP server 端口（可选）
+```yaml
+tracker:
+  kind: linear
+  api_key: $LINEAR_API_KEY
+  project_slug: your-project-id
 
-<Callout type="warning">
-Web UI 不建议依赖 debug server。UI 应该通过主 API Server 的 `/api/v1/symphony/snapshot` 获取状态。
+worker:
+  ssh_hosts:
+    - "user@host.docker.internal:22"
+```
+
+通常还要确认：
+
+- `codex.command`
+- `workspace.root`
+- `polling.interval_ms`
+- `server.port`
+
+<Callout type="tip">
+  `WORKFLOW.md.example` 已经给了当前仓库支持的字段骨架。比起自己从零写，先从模板裁剪更稳。
 </Callout>
 
-### 3) SSH 安全配置
+## D. 什么时候你才需要关心 SSH
 
-Symphony 通过 SSH 在宿主机上运行 Codex。**不要**把整个 `~/.ssh` 挂进容器，过盅导致所有私钥暴露。
+很多人第一次看配置会被 SSH 那一段吓到，但它不是所有路径的第一步。
 
-请使用**专用密钥 + 命令限制**：
+只有同时满足下面两个条件时，你才需要认真处理 SSH：
+
+1. 你走的是**手动 compose / 手动 workflow** 路径
+2. 你确实使用 `worker.ssh_hosts` 让 Symphony 通过 SSH 去启动远程 Codex
+
+这时才建议你使用专用 key，而不是把整个 `~/.ssh` 挂进容器。
 
 ```bash
-# 1. 生成专用密钥
 ssh-keygen -t ed25519 -f ~/.ssh/synclax_codex -C "synclax-codex" -N ""
-
-# 2. 把公钥加到 authorized_keys，限制只能执行 codex app-server
-echo 'command="codex app-server",no-port-forwarding,no-X11-forwarding,no-agent-forwarding' \
-  $(cat ~/.ssh/synclax_codex.pub) >> ~/.ssh/authorized_keys
-
-# 3. 验证（必须不提示密码）
-ssh -i ~/.ssh/synclax_codex -o BatchMode=yes localhost echo ok
 ```
 
-然后将 Compose 文件里的 `${HOME}/.ssh:/root/.ssh:ro` 改为：
+然后把公钥限制为只能执行 `codex app-server`：
+
+```bash
+echo 'command="codex app-server",no-port-forwarding,no-X11-forwarding,no-agent-forwarding' \
+  $(cat ~/.ssh/synclax_codex.pub) >> ~/.ssh/authorized_keys
+```
+
+对应的 compose 挂载也应该从：
+
+```yaml
+- ${HOME}/.ssh:/root/.ssh:ro
+```
+
+改成更小权限的专用 key 挂载：
 
 ```yaml
 volumes:
@@ -101,51 +230,15 @@ volumes:
   - ${HOME}/.ssh/synclax_codex.pub:/root/.ssh/id_ed25519.pub:ro
 ```
 
-即使容器被攻击者控制，也只能运行 `codex app-server`，无法获得完整 shell。
+## E. 运行时覆盖：`POST /api/v1/symphony/start`
 
-## B. Symphony 工作流：`WORKFLOW.md`
+即使你已经写好了 `app.yaml` / `WORKFLOW.md`，主 API 仍然支持在启动 Symphony 时临时覆盖部分参数。
 
-`WORKFLOW.md` 是 Symphony 的“真配置”，文件结构为：
-
-```md
----
-# YAML front matter（配置）
----
-
-Prompt template（Liquid）
-```
-
-你可以先使用仓库自带模板：
-
-```bash
-cp WORKFLOW.md.example WORKFLOW.md
-```
-
-### 最小可用字段（跑起来必须有）
-
-要让 Symphony 真正能派发任务（从 Linear 拉 issue 并运行 agent），你至少需要：
-
-- `tracker.project_slug`
-- `tracker.api_key`（推荐写 `$LINEAR_API_KEY`）
-- `codex.command`（默认是 `codex app-server`，不填也会有默认值，但你要确保运行环境里存在该命令）
-
-并设置：
-
-```bash
-export LINEAR_API_KEY='你的 Linear API Key'
-```
-
-<Callout type="tip">
-更完整的字段解释与模板绑定变量见：`/docs/reference/workflow`（后续我们也会把它完全中文化扩写）。
-</Callout>
-
-## C. 覆盖策略：UI/联调时怎么切换 Workflow 与端口
-
-主 API Server 暴露了：
+接口：
 
 - `POST /api/v1/symphony/start`
 
-它允许你在启动时传 JSON 覆盖：
+可覆盖：
 
 - `workflow_path`
 - `http_port`
@@ -160,5 +253,11 @@ curl -sS -X POST http://localhost:2910/api/v1/symphony/start \
 
 重要语义：
 
-- `http_port: -1`：强制关闭 Symphony debug server（即使 `WORKFLOW.md` 设置了 `server.port`）
-- 如果 Symphony 已经在运行，再传“不同的” `workflow_path` 或 `http_port`，当前实现会返回 `409 Conflict`（避免运行中热切换造成歧义）
+- `http_port: -1` 会强制关闭 debug server
+- 如果 Symphony 已经在运行，再传不同的 `workflow_path` 或 `http_port`，当前实现会返回 `409 Conflict`
+
+## 什么时候该看哪份文档
+
+- 你还在确认“怎么最快跑起来” → [Quickstart](/docs/getting-started/quickstart)
+- 你要查 workflow 字段含义 → [WORKFLOW.md Reference](/docs/reference/workflow)
+- 你要直接调 API → [HTTP API Reference](/docs/reference/http-api)

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { DocsBody, DocsDescription, DocsPage, DocsTitle } from "fumadocs-ui/page";
 
 import { source } from "@/lib/source";
@@ -17,6 +17,11 @@ export async function generateStaticParams() {
 
 export async function generateMetadata({ params }: DocsPageProps): Promise<Metadata> {
   const { slug } = await params;
+
+  if (!slug || slug.length === 0) {
+    return {};
+  }
+
   const page = source.getPage(slug);
 
   if (!page) {
@@ -31,6 +36,11 @@ export async function generateMetadata({ params }: DocsPageProps): Promise<Metad
 
 export default async function Page({ params }: DocsPageProps) {
   const { slug } = await params;
+
+  if (!slug || slug.length === 0) {
+    redirect("/docs/getting-started");
+  }
+
   const page = source.getPage(slug);
 
   if (!page) {

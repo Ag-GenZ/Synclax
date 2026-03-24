@@ -301,7 +301,7 @@ export default function HomePage() {
 
         <section className="grid gap-6 rounded-2xl border bg-fd-card p-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-center">
           <div>
-            <p className="text-sm font-medium text-fd-primary">Start Here</p>
+            <p className="text-sm font-medium text-fd-primary">Getting Started</p>
             <h2 className="mt-3 text-3xl font-semibold tracking-tight text-fd-foreground">
               5 分钟跑起第一个 Agent 任务
             </h2>

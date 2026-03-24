@@ -30,11 +30,13 @@ export default function DocsRootLayout({
           type: "main",
           text: "Home",
           url: "/",
+          on: "nav",
         },
         {
           type: "main",
           text: "Quickstart",
           url: "/docs/getting-started/quickstart",
+          on: "nav",
         },
       ]}
       tabs={{
