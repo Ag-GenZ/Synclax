@@ -1,23 +1,6 @@
 @import 'tailwindcss';
-@import 'fumadocs-ui/css/neutral.css';
+@import 'fumadocs-ui/css/vitepress.css';
 @import 'fumadocs-ui/css/preset.css';
-
-:root {
-  --font-body: "IBM Plex Sans", "Helvetica Neue", sans-serif;
-  --font-display: "Space Grotesk", "Helvetica Neue", sans-serif;
-  --fd-layout-width: 88rem;
-  --fd-sidebar-width: 18rem;
-  --fd-toc-width: 18rem;
-  --app-canvas: #f5efe4;
-  --app-card: rgba(255, 251, 244, 0.88);
-  --app-card-strong: #fffaf0;
-  --app-ink: #1c2a2f;
-  --app-muted: #5e6e75;
-  --app-line: rgba(24, 55, 67, 0.12);
-  --app-accent: #146c6e;
-  --app-accent-soft: #e1f2f0;
-  --app-sun: #ffcf7d;
-}
 
 html,
 body {
@@ -26,293 +9,31 @@ body {
 
 body {
   margin: 0;
-  color: var(--app-ink);
-  font-family: var(--font-body);
-  background:
-    radial-gradient(circle at top left, rgba(255, 208, 125, 0.45), transparent 30%),
-    radial-gradient(circle at top right, rgba(20, 108, 110, 0.22), transparent 32%),
-    linear-gradient(180deg, #fffaf1 0%, #f7f0e3 44%, #f4ece2 100%);
-}
-
-h1,
-h2,
-h3,
-h4,
-h5,
-h6,
-.home-eyebrow,
-.home-stat-value,
-.home-card-title {
-  font-family: var(--font-display);
-  letter-spacing: -0.04em;
-}
-
-a {
-  color: inherit;
-}
-
-::selection {
-  background: rgba(20, 108, 110, 0.18);
-}
-
-.home-shell {
-  display: grid;
-  gap: 4rem;
-  padding: 2.5rem clamp(1.25rem, 3vw, 3rem) 5rem;
-}
-
-.home-hero {
-  position: relative;
-  display: grid;
-  gap: 2rem;
-  grid-template-columns: minmax(0, 1.2fr) minmax(19rem, 0.8fr);
-  align-items: stretch;
-}
-
-.home-panel,
-.home-aside,
-.home-section {
-  border: 1px solid var(--app-line);
-  border-radius: 2rem;
-  background: var(--app-card);
-  backdrop-filter: blur(16px);
-  box-shadow: 0 20px 60px rgba(24, 55, 67, 0.08);
-}
-
-.home-panel {
-  overflow: hidden;
-}
-
-.home-panel-inner {
-  position: relative;
-  display: grid;
-  gap: 1.5rem;
-  padding: clamp(2rem, 5vw, 4rem);
-}
-
-.home-panel-inner::before {
-  position: absolute;
-  inset: auto auto -2.5rem -2.5rem;
-  width: 12rem;
-  height: 12rem;
-  border-radius: 999px;
-  background: radial-gradient(circle, rgba(255, 207, 125, 0.8), transparent 70%);
-  content: "";
-}
-
-.home-eyebrow {
-  display: inline-flex;
-  width: fit-content;
-  align-items: center;
-  gap: 0.5rem;
-  border-radius: 999px;
-  padding: 0.45rem 0.9rem;
-  background: rgba(20, 108, 110, 0.1);
-  color: var(--app-accent);
-  font-size: 0.8rem;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
-.home-title {
-  max-width: 12ch;
-  margin: 0;
-  font-size: clamp(2.8rem, 6vw, 5.5rem);
-  line-height: 0.92;
-}
-
-.home-lead {
-  max-width: 60ch;
-  margin: 0;
-  color: var(--app-muted);
-  font-size: 1.08rem;
-  line-height: 1.7;
-}
-
-.home-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.9rem;
-}
-
-.home-primary,
-.home-secondary {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  padding: 0.9rem 1.2rem;
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.home-primary {
-  background: linear-gradient(120deg, #10494b 0%, #146c6e 100%);
-  color: #fff;
-}
-
-.home-secondary {
-  border: 1px solid rgba(20, 108, 110, 0.24);
-  background: rgba(255, 255, 255, 0.62);
-  color: var(--app-accent);
-}
-
-.home-metrics {
-  display: grid;
-  gap: 0.9rem;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.home-metric {
-  border: 1px solid rgba(20, 108, 110, 0.12);
-  border-radius: 1.35rem;
-  background: rgba(255, 255, 255, 0.72);
-  padding: 1rem 1rem 1.1rem;
-}
-
-.home-stat-value {
-  font-size: 1.8rem;
-}
-
-.home-stat-label {
-  margin-top: 0.25rem;
-  color: var(--app-muted);
-  font-size: 0.92rem;
-}
-
-.home-aside {
-  display: grid;
-  gap: 1.1rem;
-  padding: 1.35rem;
-}
-
-.home-aside img {
-  width: 100%;
-  height: auto;
-  border-radius: 1.4rem;
-  border: 1px solid rgba(20, 108, 110, 0.16);
-  background: linear-gradient(180deg, #fef9ef 0%, #fff 100%);
-}
-
-.home-aside-card {
-  border-radius: 1.35rem;
-  border: 1px solid rgba(20, 108, 110, 0.12);
-  background: rgba(255, 255, 255, 0.75);
-  padding: 1rem 1.1rem;
-}
-
-.home-aside-card h2,
-.home-section h2 {
-  margin: 0 0 0.5rem;
-  font-size: 1.25rem;
-}
-
-.home-aside-card p,
-.home-section p {
-  margin: 0;
-  color: var(--app-muted);
-  line-height: 1.7;
-}
-
-.home-grid {
-  display: grid;
-  gap: 1.5rem;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.home-section {
-  display: grid;
-  gap: 1rem;
-  padding: 1.4rem;
-}
-
-.home-card-link {
-  color: inherit;
-  text-decoration: none;
-}
-
-.home-card-title {
-  margin: 0 0 0.35rem;
-  font-size: 1.05rem;
-}
-
-.home-list {
-  margin: 0;
-  padding-left: 1.2rem;
-  color: var(--app-muted);
-}
-
-.home-list li+li {
-  margin-top: 0.4rem;
-}
-
-.fd-sidebar,
-.fd-toc,
-.fd-page,
-.fd-layout {
-  --fd-color-primary: var(--app-accent);
-}
-
-.fd-layout {
-  background: transparent;
-}
-
-.fd-layout .fd-container,
-.fd-page,
-.fd-sidebar,
-.fd-toc {
-  background: transparent;
-}
-
-.fd-page {
-  border-radius: 2rem;
-  background: rgba(255, 251, 244, 0.7);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
-}
-
-.fd-prose {
-  --fd-prose-body: var(--app-ink);
-  --fd-prose-links: var(--app-accent);
-  --fd-prose-headings: #14343d;
 }
 
 .doc-kicker {
   display: inline-flex;
   width: fit-content;
   align-items: center;
-  gap: 0.5rem;
-  border-radius: 999px;
+  border-radius: 9999px;
+  border: 1px solid color-mix(in oklab, var(--color-fd-primary) 20%, transparent);
+  background: color-mix(in oklab, var(--color-fd-primary) 10%, transparent);
   padding: 0.35rem 0.75rem;
-  background: rgba(20, 108, 110, 0.1);
-  color: var(--app-accent);
-  font-size: 0.78rem;
-  font-weight: 700;
-  text-transform: uppercase;
+  color: var(--color-fd-primary);
+  font-size: 0.8rem;
+  font-weight: 600;
 }
 
 .doc-image-frame {
   overflow: hidden;
   margin: 1.5rem 0;
-  border: 1px solid rgba(20, 108, 110, 0.12);
-  border-radius: 1.6rem;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(250, 244, 233, 0.92));
-  box-shadow: 0 18px 45px rgba(24, 55, 67, 0.08);
+  border: 1px solid var(--color-fd-border);
+  border-radius: 1rem;
+  background: var(--color-fd-card);
 }
 
 .doc-image-frame img {
   display: block;
   width: 100%;
   height: auto;
-}
-
-@media (max-width: 980px) {
-
-  .home-hero,
-  .home-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .home-metrics {
-    grid-template-columns: 1fr;
-  }
 }
