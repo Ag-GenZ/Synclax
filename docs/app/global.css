@@ -1,4 +1,6 @@
-@import "fumadocs-ui/css/ocean.css";
+@import 'tailwindcss';
+@import 'fumadocs-ui/css/neutral.css';
+@import 'fumadocs-ui/css/preset.css';
 
 :root {
   --font-body: "IBM Plex Sans", "Helvetica Neue", sans-serif;
@@ -240,7 +242,7 @@ a {
   color: var(--app-muted);
 }
 
-.home-list li + li {
+.home-list li+li {
   margin-top: 0.4rem;
 }
 
@@ -304,6 +306,7 @@ a {
 }
 
 @media (max-width: 980px) {
+
   .home-hero,
   .home-grid {
     grid-template-columns: 1fr;

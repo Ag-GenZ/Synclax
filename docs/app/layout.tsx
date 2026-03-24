@@ -32,7 +32,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN" suppressHydrationWarning>
-      <body className={`${bodyFont.variable} ${displayFont.variable}`}>
+      <body className={`${bodyFont.variable} ${displayFont.variable} flex flex-col min-h-screen`}>
         <RootProvider>{children}</RootProvider>
       </body>
     </html>
