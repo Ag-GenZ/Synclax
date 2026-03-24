@@ -1,0 +1,50 @@
+---
+title: Web UI Integration
+description: 用稳定 API 构建自己的 Synclax 控制台。
+---
+
+> 如果你只是想使用现成 Console，请先看 [Console Overview](/docs/console/overview)。
+
+这一页面向“产品 / 前端 / 联调”：目标是让你用最小成本做出一个能用的 Synclax 控制台。
+
+## 推荐原则
+
+1. 把 OpenAPI 当作唯一真相
+2. UI 只依赖主 API Server，不依赖 `127.0.0.1` 的 debug server
+3. 以 Snapshot 驱动 UI 状态机：running / retrying / idle / error
+
+## 开发环境基线
+
+- Spec 路径：`api/v1.yaml`
+- 本地开发 Base URL：`http://localhost:2910/api/v1`
+
+## UI 数据流
+
+<Tabs items={["Health", "Control", "Snapshot"]}>
+  <Tab>
+    App 启动时先调 `GET /health`。成功说明服务在线，失败说明先停在连接错误态。
+  </Tab>
+  <Tab>
+    `POST /symphony/start` 与 `POST /symphony/stop` 都应视为幂等操作。
+  </Tab>
+  <Tab>
+    以 `GET /symphony/snapshot` 作为轮询源，推荐 1s ~ 3s，一切 UI 状态都从这里推导。
+  </Tab>
+</Tabs>
+
+## UI 应该拆成哪些面板
+
+<Files>
+  <Folder defaultOpen name="console">
+    <File name="health-panel.tsx" />
+    <File name="start-stop-controls.tsx" />
+    <File name="running-issues.tsx" />
+    <File name="retry-queue.tsx" />
+    <File name="recent-history.tsx" />
+    <File name="usage-summary.tsx" />
+  </Folder>
+</Files>
+
+## 安全提示
+
+目前 Symphony 控制类 endpoint 在 `api/v1.yaml` 中标记为 `security: []`。如果你的 UI 不只跑在 localhost，请先补齐鉴权 / 授权再对外暴露。

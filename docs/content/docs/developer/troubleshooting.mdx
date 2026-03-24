@@ -1,0 +1,35 @@
+---
+title: Developer Troubleshooting
+description: 站在代码库开发者视角的常见故障定位顺序。
+---
+
+## API server not responding
+
+- 确认 docker containers 正在运行：`docker compose ps`
+- 检查暴露端口：`http://localhost:2910`
+- 验证 health endpoint：`GET /api/v1/health`
+
+## Symphony won't start
+
+`POST /api/v1/symphony/start` 可能失败于：
+
+- `WORKFLOW.md` 缺失或 YAML front matter 非法
+- Linear 配置缺失 `tracker.api_key` / `tracker.project_slug`
+- `codex.command` 为空
+
+## Symphony is running but no work is dispatched
+
+常见原因：
+
+- issue state 不在 `tracker.active_states`
+- issue state 已经在 `tracker.terminal_states`
+- issue 是 `Todo`，但 blocker 尚未终结
+- `agent.max_concurrent_agents` 太小，现有任务占满
+
+## Codegen drift
+
+如果改完 OpenAPI 以后构建或类型报错：
+
+1. 先运行 `anclax gen`
+2. 再补齐 `pkg/handler/handler.go`
+3. 最后执行 `go test ./...`

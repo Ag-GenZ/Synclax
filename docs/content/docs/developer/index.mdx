@@ -1,0 +1,19 @@
+---
+title: Developer
+description: 面向仓库开发者的入口页，先看代码地图，再进入扩展细节。
+---
+
+这一分区面向 **Synclax 代码库开发者**。目标不是“告诉你大概有哪些模块”，而是把每一类扩展点对应到具体路径、命令和约束。
+
+<Cards>
+  <Card href="/docs/developer/architecture" title="Architecture" description="从代码层面理解 Anclax + Symphony 如何拼在一起。" />
+  <Card href="/docs/developer/developer-guide" title="Developer Guide" description="新增 provider / tracker 时按步骤落盘。" />
+  <Card href="/docs/developer/web-ui-integration" title="Web UI Integration" description="为 Console 或自定义前端接入稳定 API。" />
+  <Card href="/docs/developer/codegen" title="Codegen" description="OpenAPI / SQLC / Wire 的生成规则与注意事项。" />
+  <Card href="/docs/developer/troubleshooting" title="Troubleshooting" description="从失败现象反推代码层问题。" />
+</Cards>
+
+<Callout type="warning" title="先看边界，再动代码">
+  Symphony 是 orchestrator，不是业务逻辑引擎。扩展前先确认你是在改 tracker、provider、workspace，还是 API /
+  UI 契约。
+</Callout>

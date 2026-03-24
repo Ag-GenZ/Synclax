@@ -1,0 +1,172 @@
+---
+title: WORKFLOW.md Reference
+description: Symphony 的主配置文件与 prompt 模板契约。
+---
+
+`WORKFLOW.md` 是 Symphony 的主配置文件和 prompt 模板文件。
+
+## 文件结构
+
+<Files>
+  <File name="WORKFLOW.md">
+    <pre>
+      <code>{`---
+# YAML front matter config
+---
+
+Prompt template (Liquid)
+`}</code>
+    </pre>
+  </File>
+</Files>
+
+如果文件不是以 `---` 开头，整个文件都会被当作 prompt body，config 视为空 map。
+
+## Front matter schema
+
+### `tracker`
+
+```yaml
+tracker:
+  kind: linear
+  endpoint: https://api.linear.app/graphql
+  api_key: $LINEAR_API_KEY
+  project_slug: your-project-slug
+  active_states: ["Todo", "In Progress"]
+  terminal_states: ["Closed", "Cancelled", "Canceled", "Duplicate", "Done"]
+  page_size: 50
+  timeout_ms: 30000
+```
+
+说明：
+
+- 支持的 `tracker.kind`
+  - `linear`：使用 `endpoint`、`api_key`、`project_slug`
+  - `github`：使用 `endpoint`、`token`、`project_owner`、`project_number`、`repository`，可选 `state_field`
+- 省略 `tracker.kind` 时，默认仍然是 `linear`
+- tracker 字段支持 `$ENV_VAR` 展开
+- GitHub 默认值：
+  - `endpoint: https://api.github.com/graphql`
+  - `state_field: Status`
+- GitHub v1 限制：
+  - 一个 workflow 只支持一个 repository
+  - `tracker.state_field` 必须已经存在于目标 Project v2 中
+  - `tracker.state_field` 必须是 single-select
+  - option 名称必须与工作流状态名完全一致
+
+GitHub Projects v2 示例：
+
+```yaml
+tracker:
+  kind: github
+  endpoint: https://api.github.com/graphql
+  token: $GITHUB_TOKEN
+  project_owner: your-org-or-user
+  project_number: 1
+  repository: your-org-or-user/your-repo
+  state_field: Status
+  active_states: ["Todo", "In Progress"]
+  terminal_states: ["Done", "Closed", "Cancelled", "Canceled", "Duplicate"]
+```
+
+### `provider`
+
+```yaml
+provider:
+  kind: codex
+```
+
+### `polling`
+
+```yaml
+polling:
+  interval_ms: 30000
+```
+
+### `workspace`
+
+```yaml
+workspace:
+  root: ~/.cache/symphony_workspaces
+```
+
+### `hooks`
+
+```yaml
+hooks:
+  after_create: |
+    git clone git@github.com:your-org/your-repo.git .
+  before_run: |
+    make gen
+  after_run: |
+    echo "done"
+  before_remove: |
+    echo "cleanup"
+  timeout_ms: 60000
+```
+
+### `agent`
+
+```yaml
+agent:
+  max_concurrent_agents: 3
+  max_turns: 10
+  max_retry_backoff_ms: 300000
+```
+
+### `codex`
+
+```yaml
+codex:
+  command: codex app-server
+  read_timeout_ms: 5000
+  turn_timeout_ms: 3600000
+  stall_timeout_ms: 300000
+```
+
+## Dynamic tools
+
+当前支持的动态工具：
+
+- `linear_graphql`：使用 Symphony 的 Linear auth 执行原始 GraphQL 查询 / mutation
+- `github_graphql`：使用 Symphony 的 GitHub auth 执行原始 GraphQL 查询 / mutation
+
+要求：
+
+- `linear_graphql`
+  - `tracker.kind: linear`
+  - `tracker.endpoint` 指向 Linear GraphQL（默认 `https://api.linear.app/graphql`）
+  - `tracker.api_key` 已设置，或环境里存在 `LINEAR_API_KEY`
+- `github_graphql`
+  - `tracker.kind: github`
+  - `tracker.endpoint` 指向 GitHub GraphQL（默认 `https://api.github.com/graphql`）
+  - `tracker.token` 已设置，或环境里存在 `GITHUB_TOKEN`
+
+## Prompt template（Liquid）
+
+模板可用变量：
+
+- `attempt`
+- `issue.id`
+- `issue.identifier`
+- `issue.title`
+- `issue.description`
+- `issue.state`
+- `issue.url`
+- `issue.labels`
+- `issue.blocked_by`
+
+示例：
+
+```md
+You are working on an issue.
+
+- Title: {{ issue.title }}
+- Identifier: {{ issue.identifier }}
+- URL: {{ issue.url }}
+- Attempt: {{ attempt }}
+```
+
+<Callout type="warning">
+  启用了 strict variables。引用不存在的变量会直接导致模板渲染失败。
+</Callout>

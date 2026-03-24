@@ -1,0 +1,6 @@
+{
+  "title": "Reference",
+  "description": "查契约、协议与运行时细节的地方。",
+  "root": true,
+  "pages": ["index", "workflow", "http-api", "symphony-spec", "diagrams"]
+}

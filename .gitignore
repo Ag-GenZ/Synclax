@@ -18,7 +18,10 @@ todos.json
 .vitepress/dist
 docs/.vitepress/cache
 docs/.vitepress/dist
+docs/.source
+docs/tsconfig.tsbuildinfo
 WORKFLOW.*.md
 log
 tmp
 tmp/**
+.next

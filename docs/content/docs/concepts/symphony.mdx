@@ -1,0 +1,235 @@
+---
+title: Symphony
+description: 编排器/控制循环如何派发、执行与投影状态。
+---
+
+这一页是“第一层（使用者/运维/联调）”里对 Symphony 的**系统性说明**：它解决什么问题、运行时的核心循环是什么、你需要准备哪些配置、以及如何用它给 Web UI 提供状态数据。
+
+如果你想了解官方设计与约束（为什么这么做、哪些行为是规范的一部分），请看：
+
+- [Symphony SPEC 解析（Reference）](/docs/reference/symphony-spec)
+- 上游 SPEC 原文：`openai/symphony` 的 `SPEC.md`（本页会按它的结构来解释“怎么用”）
+
+## 0. 一句话理解 Symphony
+
+Symphony 是一个**控制循环（control loop）**：
+
+1. 周期性从 Tracker（目前是 Linear）拉取候选 Issue
+2. 根据调度规则挑选一些 Issue 分配给 Agent
+3. 为每个 Issue 准备 workspace，并驱动 Codex “turn” 一次次执行
+4. 当 Issue 不再处于 active 状态或达到上限时停止，并按策略重试/清理
+
+对你来说，Symphony 最核心的输出就是一个可以给 UI 消费的 **Snapshot**（运行中/重试中/累计用量等）。
+
+## 1. Symphony 解决的“具体问题”
+
+当你希望让一个 LLM Agent 自动推进工作时，通常会遇到这些现实问题：
+
+- **从哪里取任务？**（Tracker：Linear）
+- **怎么做并发控制？**（全局并发、按状态并发、避免重复派发）
+- **怎么保证每个任务有稳定的工作目录？**（workspace 与 hook）
+- **怎么避免卡死？**（stall timeout）
+- **怎么把运行状态暴露给 UI？**（health + snapshot）
+- **怎么处理失败与重试？**（continuation/backoff）
+
+Symphony 不是“执行器”本身：它主要负责调度与生命周期；实际干活的是 Codex app-server 驱动下的 Agent。
+
+## 2. 核心术语（建议先读完这节）
+
+### Issue（任务单）
+
+Symphony 的输入对象是 Tracker 的 Issue。你至少会关心：
+
+- `identifier`：像 `ABC-123`（用于 workspace key、日志、UI 展示）
+- `state`：任务状态（用于调度与停止条件）
+- `blocked_by`：阻塞关系（影响 Todo 的派发规则）
+
+### Active / Terminal 状态
+
+你在 `WORKFLOW.md` 里配置两组状态：
+
+- `tracker.active_states`：允许派发/继续运行的状态（例如 `Todo`, `In Progress`）
+- `tracker.terminal_states`：认为已终结的状态（例如 `Done`, `Canceled`）
+
+> 实际运行里，Symphony 会在每轮/每次 attempt 后从 Tracker 刷新 issue state，决定是否继续。
+
+### Attempt vs Turn
+
+- **Turn**：一次 Codex 调用（一次“对话回合”）
+- **Attempt**：一次“从 workspace → 多个 turn → 结束”的执行周期
+
+在 Synclax 的实现里，一个 attempt 会最多跑 `agent.max_turns` 个 turn；每个 turn 完成后会刷新 issue 状态，如果不再 active 则提前结束。
+
+### Workspace
+
+每个 issue identifier 都映射到一个稳定的 workspace 路径（可复用）。workspace 根目录由 `workspace.root` 决定。
+
+你可以把 workspace 当作：
+
+- Agent 的当前工作目录（cwd）
+- hook 脚本执行的目录（例如 clone repo、make gen）
+- “任务连续执行”的持久上下文（继续运行时不会丢失文件）
+
+### Snapshot（给 UI 的状态投影）
+
+Snapshot 是 Symphony 运行时状态的“可序列化结构”，核心用于 UI。
+
+在 Synclax 里你应该优先使用主 API Server：
+
+- `GET /api/v1/symphony/snapshot`
+
+（可选）如果你开启了 Symphony debug server（仅本机 127.0.0.1），也能拿到：
+
+- `GET http://127.0.0.1:<port>/snapshot`
+
+#### Snapshot 字段补充：`completed[]` 与持久化
+
+为了让 UI 能展示“刚刚发生了什么”（以及在服务重启后仍能看到最近历史），Synclax 额外提供了：
+
+- `completed[]`：最近的 attempt 结束记录（成功/失败/取消/超时等），用于 UI 的“历史/日志”视图
+
+同时，Synclax 会把一部分运行数据**落盘**（best-effort，不保证 100% 写入）：
+
+- 持久化目录：`<workspace.root>/.symphony_state/`
+  - `totals.json`：`codex_totals` 与 `rate_limits` 的最近一次快照（用于重启后恢复累计值）
+  - `attempts.jsonl`：最近 attempt 历史（JSON Lines，每行一个 `completed` entry）
+
+这套持久化的目标不是“强一致的审计账本”，而是：
+
+- 重启后 UI 不至于完全丢失“刚刚跑过什么”
+- 让累计 token/时间等指标不会因为重启而清零（或至少能尽量恢复）
+
+## 3. 你需要准备什么（最小可用）
+
+### 3.1 Tracker：Linear 或 GitHub Projects v2
+
+要让 Symphony 真正开始派发任务，你至少需要配置一个受支持的 tracker：
+
+- Linear
+  - `tracker.kind: linear`
+  - `tracker.project_slug`
+  - `tracker.api_key`（推荐写 `$LINEAR_API_KEY`）
+- GitHub Projects v2
+  - `tracker.kind: github`
+  - `tracker.project_owner`
+  - `tracker.project_number`
+  - `tracker.repository`
+  - `tracker.token`（推荐写 `$GITHUB_TOKEN`）
+  - 可选 `tracker.state_field`，默认 `Status`
+
+并在环境变量里设置：
+
+```bash
+export LINEAR_API_KEY='你的 Linear API Key'
+export GITHUB_TOKEN='你的 GitHub PAT'
+```
+
+GitHub 模式补充约束：
+
+- `tracker.state_field` 必须是目标 Project v2 中已存在的 single-select 字段
+- 该字段 option 名称必须直接使用工作流状态字符串
+- v1 只支持单个 repository
+
+### 3.2 Codex app-server
+
+在 `WORKFLOW.md` 中：
+
+- `codex.command` 默认为 `codex app-server`
+
+你要确保运行环境里存在该命令，并且它能在 workspace cwd 下工作。
+
+## 4. 运行与控制：你应该怎么“用” Symphony
+
+在 Synclax 里，我们把 Symphony 做成了“可控模块”，可以通过 API 启动/停止，并给 UI 暴露 snapshot。
+
+### 4.1 健康检查（UI 的第一个依赖点）
+
+```bash
+curl -sS http://localhost:2910/api/v1/health | jq .
+```
+
+这个 endpoint 目标是稳定（服务活着就返回 200），并附带 Symphony 是否在运行。
+
+### 4.2 启动 Symphony
+
+```bash
+curl -sS -X POST http://localhost:2910/api/v1/symphony/start | jq .
+```
+
+也可以覆盖 workflow 与 debug server 端口：
+
+```bash
+curl -sS -X POST http://localhost:2910/api/v1/symphony/start \
+  -H "Content-Type: application/json" \
+  -d '{"workflow_path":"./WORKFLOW.md","http_port":8089}' | jq .
+```
+
+<Callout type="tip">
+`http_port: -1` 会强制关闭 Symphony debug server（即使 `WORKFLOW.md` 设置了 `server.port`）。
+</Callout>
+
+### 4.3 UI 轮询 Snapshot
+
+```bash
+curl -sS http://localhost:2910/api/v1/symphony/snapshot | jq .
+```
+
+UI 实战建议（第一层给一个默认答案）：
+
+- 轮询间隔：`1s ~ 3s`
+- 当 `running` 为空且 `retrying` 为空：UI 显示“空闲/等待候选任务”
+- 当 `retrying` 非空：UI 展示“等待下一次 due_at”
+- 当 `running` 非空：UI 重点展示 `phase` 与 `workspace_path`
+
+### 4.4 停止 Symphony
+
+```bash
+curl -sS -X POST http://localhost:2910/api/v1/symphony/stop | jq .
+```
+
+## 5. 调度与执行：Symphony 内部到底怎么跑（面向“怎么配置/怎么解释现象”）
+
+这一节是为了让你能读懂 snapshot、读懂日志、并知道应该调哪个参数。
+
+### 5.1 调度入口：候选 Issue
+
+Symphony 会周期性调用 Tracker 拉取候选 issue（候选集合通常限制在 active states）。
+
+### 5.2 排序与派发
+
+派发之前会排序（Synclax 当前实现的排序规则）：
+
+1. `priority`（越小越优先；缺失的排后）
+2. `created_at`（越早越优先；缺失的排后）
+3. `identifier`（稳定排序用）
+
+然后按并发上限派发：
+
+- 全局并发：`agent.max_concurrent_agents`
+- 按 state 并发：`agent.max_concurrent_agents_by_state`（例如 `In Progress: 2`）
+
+### 5.3 Todo blocker 规则（非常常见的“为什么不派发”原因）
+
+当 issue state 为 `Todo` 时，如果它有 blocker 且 blocker 不是 terminal，Symphony 不会派发它。
+
+这条规则用来避免“明知被阻塞仍强行执行”的浪费。
+
+### 5.4 attempt 执行的阶段（phase）
+
+为了让 UI 以及 debug 更清晰，Synclax 会在 attempt 生命周期里更新 phase：
+
+- `PreparingWorkspace`：创建/复用 workspace
+- `LaunchingAgentProcess`：启动 codex app-server 进程
+- `InitializingSession`：创建 thread/session（会填 thread_id/pid 等）
+- `BuildingPrompt`：构造 prompt（首回合用模板；后续回合用 continuation）
+- `StreamingTurn`：正在执行 turn
+- `Finishing`：收尾
+
+你可以把这些 phase 当作“给 UI 展示的运行进度条”。
+
+### 5.5 Prompt 模板与 continuation
+
+`WORKFLOW.md` 的正文是 Liquid 模板：
+
+- 首回合：使用模板渲染（包含 issue 信息与 attempt）
+- 后续回合：不再重复完整 prompt，只发送 continuation 指令（避免 token 浪费和重复上下文）

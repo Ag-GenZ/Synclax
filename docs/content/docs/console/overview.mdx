@@ -1,0 +1,81 @@
+---
+title: Console Overview
+description: 把 Web Console 当成产品界面来理解，而不是 API 的附庸。
+---
+
+这一页面向“使用者 / 联调者”：目标是让你用现成的 **Web Console** 来操作与观察 Synclax。
+
+<div className="doc-image-frame">
+  <ImageZoom
+    alt="Console runtime panels"
+    height={640}
+    src="/images/console-pulse.svg"
+    width={1200}
+  />
+</div>
+
+<Callout type="info" title="先记住一个判断标准">
+  对使用者而言，Console 才是产品界面。HTTP API 仍然存在，但它主要是 Console 的后端契约。
+</Callout>
+
+## 1) 启动 Console
+
+在仓库根目录，确保后端已启动（见 [Quickstart](/docs/getting-started/quickstart)），然后执行：
+
+```bash
+pnpm -C web dev
+```
+
+打开浏览器访问：
+
+```bash
+http://localhost:3000
+```
+
+## 2) 你真正要看的，不是“页面”，而是运行态
+
+<Tabs items={["Health", "Control", "Runtime"]}>
+  <Tab>
+    `Health` 负责回答“服务在线吗、Console 连上了吗”，是最先暴露问题的地方。
+  </Tab>
+  <Tab>
+    `Start / Stop` 负责控制 Symphony 的生命周期。它不是运维绕路，而是产品内建能力。
+  </Tab>
+  <Tab>
+    `Snapshot` 负责把 orchestrator 的内存态投影成 UI 可以解释的结构，这才是 Console 的核心价值。
+  </Tab>
+</Tabs>
+
+## 3) Console 的核心区域
+
+### 连接状态（Health）
+
+- Console 首先要能判断“服务是否在线”
+- 当连接失败时，优先检查：后端是否启动、端口是否被占用、以及 `WORKFLOW.md` 配置是否可读
+
+### 控制（Start / Stop）
+
+- Start：启动后台编排（Symphony）
+- Stop：停止后台编排（用于暂停、排障、降噪）
+
+### 运行时（Snapshot 投影）
+
+Console 的核心价值是把运行态讲清楚：
+
+- `running`：当前在跑哪些 Issue，以及当前 phase
+- `retrying`：哪些任务在等待下一次重试、为什么重试、什么时候再来
+- `completed`：最近发生过什么，帮助回答“刚刚到底发生了什么”
+- `totals`：累计用量，帮助你评估成本与吞吐
+
+## 4) 当 Console 出现“奇怪状态”时怎么判断
+
+<Steps>
+  <Step>先看 Health，确认是后端不可达，还是仅仅没有候选任务。</Step>
+  <Step>再看 `running` 与 `retrying`，判断系统是在忙、在等，还是在退避。</Step>
+  <Step>最后才去看 Reference 里的 HTTP API 或后端日志做进一步定位。</Step>
+</Steps>
+
+<Callout type="tip">
+  如果你想开发自己的控制台或前端集成，请继续读
+  [Web UI Integration](/docs/developer/web-ui-integration)。
+</Callout>
