@@ -55,4 +55,86 @@ query IssueStatesByIDs($ids: [ID!]!) {
     nodes { id identifier state { name } }
   }
 }`
+
+	issuesByStateIDsQuery = `
+query IssuesByStateIDs($stateIDs: [ID!]!, $first: Int!, $after: String) {
+  issues(
+    filter: { state: { id: { in: $stateIDs } } }
+    first: $first
+    after: $after
+  ) {
+    nodes {
+      id
+      identifier
+      state {
+        id
+        name
+      }
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+  }
+}`
+
+	projectTeamStatesQuery = `
+query ProjectTeamStates($projectSlug: String!) {
+  projects(filter: { slugId: { eq: $projectSlug } }, first: 1) {
+    nodes {
+      teams {
+        nodes {
+          id
+          states {
+            nodes {
+              id
+              name
+              type
+              position
+            }
+          }
+        }
+      }
+    }
+  }
+}`
+
+	workflowStateCreateMutation = `
+mutation WorkflowStateCreate($input: WorkflowStateCreateInput!) {
+  workflowStateCreate(input: $input) {
+    success
+    workflowState {
+      id
+      name
+      type
+      position
+    }
+  }
+}`
+
+	workflowStateArchiveMutation = `
+mutation WorkflowStateArchive($id: String!) {
+  workflowStateArchive(id: $id) {
+    success
+    entity {
+      id
+      name
+    }
+  }
+}`
+
+	issueUpdateStateMutation = `
+mutation IssueUpdateState($id: String!, $input: IssueUpdateInput!) {
+  issueUpdate(id: $id, input: $input) {
+    success
+    issue {
+      id
+      identifier
+      state {
+        id
+        name
+      }
+    }
+  }
+}`
 )

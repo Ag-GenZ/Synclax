@@ -618,15 +618,11 @@ func (c *rpcClient) readLoop() {
 			default:
 				// Approval requests (auto-approve when approvalPolicy == "never").
 				if strings.Contains(strings.ToLower(env.Method), "approval") || strings.Contains(env.Method, "requestApproval") {
-					decision := "reject"
+					decision := "decline"
 					approved := false
 					if c.autoApprove {
 						approved = true
-						if strings.Contains(env.Method, "requestApproval") {
-							decision = "acceptForSession"
-						} else {
-							decision = "approved_for_session"
-						}
+						decision = "acceptForSession"
 					}
 					_ = c.proc.WriteJSON(map[string]any{
 						"id": id,
