@@ -1,0 +1,77 @@
+---
+title: Developer Guide
+description: 用可复制的步骤扩展 provider、tracker 与运行时契约。
+---
+
+这份指南面向 **Synclax 代码库开发者**，目标是把扩展点讲清楚，做到：
+
+- 人类友好：按步骤做就能落地（包含命令、路径、检查点）
+- LLM / Agent 友好：可直接复制 prompt / checklist，让 agent 自己按约定改代码
+
+> 术语提醒：本文的 **Provider** 指 `pkg/symphony/provider` 下的执行引擎适配器，不要和 Wire / DI 语境里的 provider set 混淆。
+
+## 先理解 3 个概念
+
+### Tracker（问题来源）
+
+- 接口：`pkg/symphony/tracker/tracker.go`
+- 现有实现：`pkg/symphony/tracker/linear/*`
+- 创建入口：`pkg/symphony/orchestrator/orchestrator.go` 的 `newTracker(...)`
+
+### Provider（执行引擎）
+
+- 接口：`pkg/symphony/provider/provider.go`
+- 工厂：`pkg/symphony/provider/factory.go`
+- 现有实现：`pkg/symphony/provider/codex_adapter.go`
+
+### WORKFLOW.md（契约与配置）
+
+它决定 `tracker.kind`、`provider.kind`、workspace、hooks、agent、codex 等运行参数。
+
+## 设计原则
+
+1. `kind` 是对用户和配置暴露的稳定契约。
+2. 外部 SDK 类型不要泄漏到上层，统一映射到 `domain.Issue` 或 provider 结构。
+3. 所有外部调用必须尊重 `context.Context`，可取消、可超时、可关闭。
+4. 新 kind 的默认值、校验和文档必须同步更新。
+
+## 新增 Provider 的最小闭环
+
+<Steps>
+  <Step>
+    决定边界：它是本地子进程、远程 HTTP API，还是其他执行后端？需要哪些 auth / endpoint / timeout？
+  </Step>
+  <Step>
+    在 `pkg/symphony/provider/<your_kind>_adapter.go` 实现 `Provider` 与 `Session` 接口。
+  </Step>
+  <Step>
+    在 `pkg/symphony/provider/factory.go` 注册 `case "<your_kind>"`。
+  </Step>
+  <Step>
+    如果有新配置，补齐 `pkg/symphony/config/config.go` 的解析、默认值与校验。
+  </Step>
+  <Step>
+    写最小 smoke test，并同步更新 `/docs/reference/workflow` 与本页。
+  </Step>
+</Steps>
+
+## 新增 Tracker 的最小闭环
+
+<Files>
+  <Folder defaultOpen name="pkg/symphony/tracker/&lt;your_kind&gt;">
+    <File name="client.go" />
+    <File name="queries.go" />
+    <File name="decoders.go" />
+    <File name="client_test.go" />
+  </Folder>
+</Files>
+
+你至少要实现三个查询能力：
+
+- `FetchCandidateIssues(ctx)`
+- `FetchIssuesByStates(ctx, stateNames)`
+- `FetchIssueStatesByIDs(ctx, issueIDs)`
+
+<Callout type="tip" title="文档同步是闭环的一部分">
+  每次新增 provider / tracker kind，都要同步更新 `/docs/reference/workflow`，否则配置契约会失真。
+</Callout>

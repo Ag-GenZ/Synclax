@@ -1,0 +1,92 @@
+---
+title: Troubleshooting
+description: 第一层排障路径：从现象出发快速定位。
+---
+
+这一页面向“使用者/联调者”，优先从**现象**出发给出最短排查路径。
+
+## 1) API Server 起不来 / 访问不到
+
+现象：
+
+- `curl http://localhost:2910/api/v1/health` 连接失败
+
+排查顺序：
+
+1. `docker compose up` 是否仍在运行
+2. 端口是否冲突（默认 `2910`）
+3. 查看 `docker compose logs dev` 是否有：
+   - DB 连接错误（DSN）
+   - 迁移失败
+   - panic
+
+## 2) `/api/v1/health` 返回 200，但功能请求报错
+
+说明：
+
+- `/health` 主要是 **liveness**，并不保证所有依赖（例如 DB 或外部服务）都已准备就绪。
+
+建议：
+
+- 先跑最简单读请求：`GET /api/v1/counter`
+- 再看 dev 容器日志定位报错堆栈
+
+## 3) Symphony 无法启动
+
+现象：
+
+- `POST /api/v1/symphony/start` 返回 500
+
+常见原因：
+
+- `WORKFLOW.md` 路径不存在（或服务进程读不到）
+- `WORKFLOW.md` YAML front matter 解析失败（格式问题）
+- Linear 配置缺失：`tracker.api_key` / `tracker.project_slug`
+- `codex.command` 为空或运行环境缺少 `codex` 命令
+
+最短修复路径：
+
+1. `cp WORKFLOW.md.example WORKFLOW.md`
+2. 设置 `LINEAR_API_KEY`
+3. 在 `WORKFLOW.md` 中填 `tracker.project_slug`
+
+## 4) Symphony 启动成功，但 Snapshot 一直空
+
+现象：
+
+- `GET /api/v1/symphony/snapshot` 里 `running=[]`，`retrying=[]`
+
+常见原因：
+
+- 候选 issue 的 state 不在 `tracker.active_states`
+- 候选 issue 的 state 已经在 `tracker.terminal_states`
+- issue state 是 `Todo` 且存在 blocker 未终结（会被跳过）
+- `agent.max_concurrent_agents` 太小，且已有任务占满（这时应该看到 `running` 非空）
+
+建议：
+
+- 确认 Linear 项目里确实存在 `Todo` / `In Progress` 的 issue
+- 临时把 `polling.interval_ms` 设置小一些（比如 3000）便于观察
+
+## 5) 你到底该用哪个 Snapshot？
+
+推荐：
+
+- Web UI / 外部系统：`GET /api/v1/symphony/snapshot`
+- 仅本机调试：Symphony debug server `GET http://127.0.0.1:<port>/snapshot`（如果你启用了它）
+
+<Callout type="warning">
+debug server 绑定在 `127.0.0.1`，并且不一定常开；UI 不要依赖它。
+</Callout>
+
+## 6) Start 返回 409 Conflict
+
+含义：
+
+- Symphony 已经在运行
+- 你又调用了 start，并且传了不同的 `workflow_path` 或 `http_port`
+
+解决：
+
+- 不带 body 重试 start（幂等）
+- 或先 `POST /api/v1/symphony/stop` 再 start

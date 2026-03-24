@@ -1,0 +1,6 @@
+{
+  "title": "Concepts",
+  "description": "理解系统为何这样设计，而不只是怎样点击。",
+  "root": true,
+  "pages": ["index", "philosophy", "architecture", "symphony"]
+}

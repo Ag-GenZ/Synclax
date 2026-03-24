@@ -1,0 +1,31 @@
+<svg width="1200" height="640" viewBox="0 0 1200 640" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="640" rx="40" fill="#FFF8EE"/>
+  <rect x="78" y="96" width="1044" height="448" rx="34" fill="#FFFDF8" stroke="#DCEAE5" stroke-width="2"/>
+  <rect x="126" y="144" width="206" height="124" rx="28" fill="#146C6E"/>
+  <rect x="412" y="144" width="206" height="124" rx="28" fill="#FFFFFF" stroke="#D2E3DE" stroke-width="2"/>
+  <rect x="698" y="144" width="206" height="124" rx="28" fill="#FFFFFF" stroke="#D2E3DE" stroke-width="2"/>
+  <rect x="984" y="144" width="90" height="124" rx="28" fill="#FFFFFF" stroke="#D2E3DE" stroke-width="2"/>
+  <rect x="234" y="360" width="206" height="116" rx="28" fill="#FFFFFF" stroke="#D2E3DE" stroke-width="2"/>
+  <rect x="508" y="360" width="206" height="116" rx="28" fill="#1D5D65"/>
+  <rect x="782" y="360" width="206" height="116" rx="28" fill="#FFFFFF" stroke="#D2E3DE" stroke-width="2"/>
+  <path d="M332 206H382" stroke="#146C6E" stroke-width="8" stroke-linecap="round"/>
+  <path d="M618 206H668" stroke="#146C6E" stroke-width="8" stroke-linecap="round"/>
+  <path d="M904 206H954" stroke="#146C6E" stroke-width="8" stroke-linecap="round"/>
+  <path d="M824 268V332" stroke="#146C6E" stroke-width="8" stroke-linecap="round"/>
+  <path d="M612 268V332" stroke="#146C6E" stroke-width="8" stroke-linecap="round"/>
+  <path d="M438 418H490" stroke="#146C6E" stroke-width="8" stroke-linecap="round"/>
+  <path d="M714 418H764" stroke="#146C6E" stroke-width="8" stroke-linecap="round"/>
+  <text x="160" y="204" fill="#FFF8EE" font-family="Helvetica, Arial, sans-serif" font-size="34" font-weight="700">Linear</text>
+  <text x="160" y="238" fill="#DDF2EC" font-family="Helvetica, Arial, sans-serif" font-size="22">issue source</text>
+  <text x="448" y="204" fill="#19464F" font-family="Helvetica, Arial, sans-serif" font-size="34" font-weight="700">Scheduler</text>
+  <text x="448" y="238" fill="#5D7076" font-family="Helvetica, Arial, sans-serif" font-size="22">priority + state rules</text>
+  <text x="732" y="204" fill="#19464F" font-family="Helvetica, Arial, sans-serif" font-size="34" font-weight="700">Workspace</text>
+  <text x="732" y="238" fill="#5D7076" font-family="Helvetica, Arial, sans-serif" font-size="22">stable task directory</text>
+  <text x="1004" y="216" fill="#19464F" font-family="Helvetica, Arial, sans-serif" font-size="28" font-weight="700">UI</text>
+  <text x="268" y="424" fill="#19464F" font-family="Helvetica, Arial, sans-serif" font-size="32" font-weight="700">Hooks</text>
+  <text x="268" y="456" fill="#5D7076" font-family="Helvetica, Arial, sans-serif" font-size="22">before_run / after_run</text>
+  <text x="546" y="424" fill="#FFF8EE" font-family="Helvetica, Arial, sans-serif" font-size="32" font-weight="700">Codex</text>
+  <text x="546" y="456" fill="#DDF2EC" font-family="Helvetica, Arial, sans-serif" font-size="22">session + turn loop</text>
+  <text x="818" y="424" fill="#19464F" font-family="Helvetica, Arial, sans-serif" font-size="32" font-weight="700">Snapshot</text>
+  <text x="818" y="456" fill="#5D7076" font-family="Helvetica, Arial, sans-serif" font-size="22">running / retrying / totals</text>
+</svg>

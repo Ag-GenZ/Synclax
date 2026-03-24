@@ -1,0 +1,179 @@
+---
+title: Quickstart
+description: 按仓库当前 README 的推荐路径，把 Synclax 跑起来并看到 Dashboard 在线。
+---
+
+这一页只做一件事：按**仓库当前 README 的真实启动路径**，把 Synclax 在本地跑起来。
+
+推荐顺序分两条：
+
+1. **首选：一键本地部署** `./scripts/deploy-local.sh`
+2. **备用：手动全栈启动** `docker compose` + `web`
+
+如果你只是第一次上手，先走第一条，不要一开始就钻进 `WORKFLOW.md`、SSH 挂载和手动起多个进程。
+
+## 成功标准
+
+做到下面 3 点，就说明本地 Quickstart 已经闭环：
+
+1. Dashboard 能打开：`http://localhost:3000`
+2. API 健康检查通过：`http://localhost:2910/api/v1/health`
+3. 你知道本地部署生成了哪些文件，以及去哪里补 Linear 配置
+
+## 前置条件
+
+按 README 当前说明，本地运行需要这些基础依赖：
+
+- Docker
+- Go
+- Node.js + pnpm
+- Git
+- [Codex](https://github.com/openai/codex)
+- Linear 账号和 API Key
+
+<Callout type="tip" title="不用先手装全">
+  `./scripts/deploy-local.sh` 会在可用 Homebrew 的机器上自动补安装缺失的 `Docker`、`Go`、`Node.js`、`pnpm`
+  和 `Git`。但 `Codex` 以及你的 Linear 凭据，仍然需要你自己准备。
+</Callout>
+
+## 路径 A：一键本地部署（推荐）
+
+在仓库根目录执行：
+
+```bash
+./scripts/deploy-local.sh
+```
+
+这个脚本会自动完成 README 里列出的整套本地启动流程：
+
+- 启动一个独立的本地 PostgreSQL 容器
+- 生成受脚本管理的 `app.yaml`
+- 生成 `WORKFLOW.local.md`
+- 生成 `tmp/local-deploy/synclax.env`
+- 编译并启动 Go API，默认监听 `http://localhost:2910`
+- 构建并启动 Web Dashboard，默认监听 `http://localhost:3000`
+
+跑完以后先检查这两个地址：
+
+```bash
+open http://localhost:3000
+curl -sS http://localhost:2910/api/v1/health | jq .
+```
+
+## 如果还没配 Linear
+
+README 当前给的做法是直接编辑脚本生成的 env 文件：`tmp/local-deploy/synclax.env`
+
+至少补这两个值：
+
+```text
+LINEAR_API_KEY=your_linear_api_key
+LINEAR_PROJECT_SLUG=your_linear_project_slug
+```
+
+改完后重新执行：
+
+```bash
+./scripts/deploy-local.sh
+```
+
+<Callout type="warning" title="别手改脚本生成的主配置逻辑">
+  本地部署路径下，`app.yaml` 和 `WORKFLOW.local.md` 是 `deploy-local.sh` 生成并维护的。先改
+  `tmp/local-deploy/synclax.env`，再重跑脚本；不要把 Quickstart 建立在手改一堆临时文件上。
+</Callout>
+
+## 你会得到什么
+
+一键部署完成后，这几个路径最重要：
+
+- `app.yaml`
+  API 读取的应用配置。由脚本生成，指向本地 PostgreSQL 和 `WORKFLOW.local.md`。
+- `WORKFLOW.local.md`
+  本地部署使用的 Symphony workflow。由脚本生成。
+- `tmp/local-deploy/synclax.env`
+  你应该补 `LINEAR_API_KEY` 和 `LINEAR_PROJECT_SLUG` 的地方。
+- `tmp/local-deploy/deploy-info.txt`
+  本地部署结果摘要，里面会列出 API、Web、Workflow、env 文件位置。
+
+## 怎么停止本地服务
+
+README 当前给的停止方式是：
+
+```bash
+./scripts/stop-local.sh
+```
+
+它会停掉：
+
+- 本地启动的 API 进程
+- 本地启动的 Web 进程
+- 本地 PostgreSQL 容器
+
+## 路径 B：手动全栈启动（备用）
+
+如果你明确想按 compose 路径手动控制服务，再走这条。
+
+### 1. 准备 workflow
+
+```bash
+cp WORKFLOW.md.example WORKFLOW.md
+```
+
+最少需要补这些字段：
+
+```yaml
+tracker:
+  kind: linear
+  api_key: $LINEAR_API_KEY
+  project_slug: your-project-id
+
+worker:
+  ssh_hosts:
+    - "user@host.docker.internal:22"
+```
+
+然后提供环境变量：
+
+```bash
+export LINEAR_API_KEY='your_linear_api_key'
+```
+
+### 2. 启动 API + DB
+
+开发模式：
+
+```bash
+LINEAR_API_KEY=lin_api_xxx docker compose up
+```
+
+生产构建模式：
+
+```bash
+LINEAR_API_KEY=lin_api_xxx docker compose -f docker-compose.full.yaml up -d
+```
+
+两种方式都会把 API 起在 `2910`。
+
+### 3. 启动 Web Dashboard
+
+```bash
+cd web
+pnpm install
+pnpm dev --port 3000
+```
+
+## 什么时候你应该关心 SSH
+
+只有你走**手动 compose 路径**，并且使用 `worker.ssh_hosts` 让 Symphony 通过 SSH 去远程执行 Codex 时，
+才需要进一步处理专用 SSH key、挂载方式和 `authorized_keys` 限制。
+
+这部分细节不要塞进第一步；需要时再看：
+
+- [Configuration](/docs/getting-started/configuration)
+- [WORKFLOW.md Reference](/docs/reference/workflow)
+
+## 下一步
+
+- 想理解 `app.yaml`、`WORKFLOW.md` 和环境变量怎么配合 → [Configuration](/docs/getting-started/configuration)
+- 想理解 Symphony 到底怎么轮询、派发、重试 → [Symphony](/docs/concepts/symphony)
+- 需要直接调用控制接口 → [HTTP API Reference](/docs/reference/http-api)

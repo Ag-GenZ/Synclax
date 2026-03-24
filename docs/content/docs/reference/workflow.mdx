@@ -1,0 +1,118 @@
+---
+title: WORKFLOW.md Reference
+description: Symphony 的主配置文件与 prompt 模板契约。
+---
+
+`WORKFLOW.md` 是 Symphony 的主配置文件和 prompt 模板文件。
+
+## 文件结构
+
+<Files>
+  <File name="WORKFLOW.md">
+    <pre>
+      <code>{`---
+# YAML front matter config
+---
+
+Prompt template (Liquid)
+`}</code>
+    </pre>
+  </File>
+</Files>
+
+如果文件不是以 `---` 开头，整个文件都会被当作 prompt body，config 视为空 map。
+
+## Front matter schema
+
+### `tracker`
+
+```yaml
+tracker:
+  kind: linear
+  endpoint: https://api.linear.app/graphql
+  api_key: $LINEAR_API_KEY
+  project_slug: your-project-slug
+  active_states: ["Todo", "In Progress"]
+  terminal_states: ["Closed", "Cancelled", "Canceled", "Duplicate", "Done"]
+  page_size: 50
+  timeout_ms: 30000
+```
+
+### `provider`
+
+```yaml
+provider:
+  kind: codex
+```
+
+### `polling`
+
+```yaml
+polling:
+  interval_ms: 30000
+```
+
+### `workspace`
+
+```yaml
+workspace:
+  root: ~/.cache/symphony_workspaces
+```
+
+### `hooks`
+
+```yaml
+hooks:
+  after_create: |
+    git clone git@github.com:your-org/your-repo.git .
+  before_run: |
+    make gen
+  after_run: |
+    echo "done"
+  before_remove: |
+    echo "cleanup"
+  timeout_ms: 60000
+```
+
+### `agent`
+
+```yaml
+agent:
+  max_concurrent_agents: 3
+  max_turns: 10
+  max_retry_backoff_ms: 300000
+```
+
+### `codex`
+
+```yaml
+codex:
+  command: codex app-server
+  read_timeout_ms: 5000
+  turn_timeout_ms: 3600000
+  stall_timeout_ms: 300000
+```
+
+## Dynamic tools
+
+当前支持的动态工具：
+
+- `linear_graphql`：使用 Symphony 的 Linear auth 执行原始 GraphQL 查询 / mutation
+
+## Prompt template（Liquid）
+
+模板可用变量：
+
+- `attempt`
+- `issue.id`
+- `issue.identifier`
+- `issue.title`
+- `issue.description`
+- `issue.state`
+- `issue.url`
+- `issue.labels`
+- `issue.blocked_by`
+
+<Callout type="warning">
+  启用了 strict variables。引用不存在的变量会直接导致模板渲染失败。
+</Callout>
