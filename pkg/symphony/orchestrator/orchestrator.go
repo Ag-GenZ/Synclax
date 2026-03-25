@@ -763,6 +763,9 @@ func (o *Orchestrator) reconcile(ctx context.Context) {
 	for _, r := range running {
 		state, ok := stateByID[r.IssueID]
 		if !ok {
+			log.Printf("symphony reconcile_missing issue_id=%s identifier=%s", r.IssueID, r.Identifier)
+			o.stopRunning(r.IssueID, PhaseCanceledByReconciliation, false)
+			o.releaseClaim(r.IssueID)
 			continue
 		}
 		if isTerminal(state, terminalStates) {

@@ -319,6 +319,51 @@ codex:
 	}
 }
 
+func TestReconcile_StopsRunningIssueWhenTrackerNoLongerReturnsState(t *testing.T) {
+	workflow := `---
+tracker:
+  kind: linear
+  api_key: x
+  project_slug: proj
+  active_states:
+    - Todo
+    - In Progress
+  terminal_states:
+    - Done
+codex:
+  command: "true"
+---`
+	o, cancel := mustOrchestrator(t, workflow)
+	t.Cleanup(cancel)
+
+	o.tracker = &fakeTracker{statesByID: map[string]string{}}
+	o.running["i1"] = &RunningEntry{
+		Issue:      domain.Issue{ID: "i1", Identifier: "ABC-1", Title: "Test", State: "In Progress"},
+		IssueID:    "i1",
+		Identifier: "ABC-1",
+		StartedAt:  time.Now().Add(-time.Second),
+	}
+	o.claim("i1")
+
+	o.reconcile(context.Background())
+
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	entry := o.running["i1"]
+	if entry == nil {
+		t.Fatal("expected running entry to remain until worker exit cleanup")
+	}
+	if entry.Phase != PhaseCanceledByReconciliation {
+		t.Fatalf("expected reconcile cancel phase, got %q", entry.Phase)
+	}
+	if !entry.suppressRetry {
+		t.Fatal("expected reconcile cancel to suppress retries")
+	}
+	if _, ok := o.claimed["i1"]; ok {
+		t.Fatal("expected claim to be released when tracker no longer returns issue state")
+	}
+}
+
 func TestBootstrapWorkflowTracker_RunsWhenEnabled(t *testing.T) {
 	workflow := `---
 tracker:

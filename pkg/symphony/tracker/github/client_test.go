@@ -27,7 +27,7 @@ func TestNewFromConfig_ResolvesProjectAndStateField(t *testing.T) {
 			t.Fatalf("unexpected query: %s", req.Query)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"data":{"organization":{"login":"octo-org","projectV2":{"id":"PVT_proj","title":"Tracker","field":{"__typename":"ProjectV2SingleSelectField","id":"PVTSSF_status","name":"Status","options":[{"id":"todo","name":"Todo"},{"id":"ip","name":"In Progress"}]}}},"user":null,"repository":{"id":"R_repo","name":"repo","owner":{"login":"octo-org"}}}}`))
+		_, _ = w.Write([]byte(`{"data":{"repositoryOwner":{"login":"octo-org","projectV2":{"id":"PVT_proj","title":"Tracker","field":{"__typename":"ProjectV2SingleSelectField","id":"PVTSSF_status","name":"Status","options":[{"id":"todo","name":"Todo"},{"id":"ip","name":"In Progress"}]}}},"repository":{"id":"R_repo","name":"repo","owner":{"login":"octo-org"}}}}`))
 	}))
 	t.Cleanup(srv.Close)
 
@@ -61,7 +61,7 @@ func TestNewFromConfig_ResolvesProjectAndStateField(t *testing.T) {
 func TestNewFromConfig_FieldMustBeSingleSelect(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"data":{"organization":{"login":"octo-org","projectV2":{"id":"PVT_proj","title":"Tracker","field":{"__typename":"ProjectV2Field"}}},"user":null,"repository":{"id":"R_repo","name":"repo","owner":{"login":"octo-org"}}}}`))
+		_, _ = w.Write([]byte(`{"data":{"repositoryOwner":{"login":"octo-org","projectV2":{"id":"PVT_proj","title":"Tracker","field":{"__typename":"ProjectV2Field"}}},"repository":{"id":"R_repo","name":"repo","owner":{"login":"octo-org"}}}}`))
 	}))
 	t.Cleanup(srv.Close)
 
@@ -93,28 +93,36 @@ func TestFetchCandidateIssues_PaginatesFiltersAndCaches(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case strings.Contains(req.Query, "ResolveProject"):
-			_, _ = w.Write([]byte(`{"data":{"organization":{"login":"octo-org","projectV2":{"id":"PVT_proj","title":"Tracker","field":{"__typename":"ProjectV2SingleSelectField","id":"PVTSSF_status","name":"Status","options":[{"id":"todo","name":"Todo"},{"id":"ip","name":"In Progress"},{"id":"done","name":"Done"}]}}},"user":null,"repository":{"id":"R_repo","name":"repo","owner":{"login":"octo-org"}}}}`))
+			_, _ = w.Write([]byte(`{"data":{"repositoryOwner":{"login":"octo-org","projectV2":{"id":"PVT_proj","title":"Tracker","field":{"__typename":"ProjectV2SingleSelectField","id":"PVTSSF_status","name":"Status","options":[{"id":"todo","name":"Todo"},{"id":"ip","name":"In Progress"},{"id":"done","name":"Done"}]}}},"repository":{"id":"R_repo","name":"repo","owner":{"login":"octo-org"}}}}`))
 		case strings.Contains(req.Query, "ProjectItems"):
 			projectItemCalls++
 			after, _ := req.Variables["after"].(string)
 			if req.Variables["after"] == nil {
 				after = ""
 			}
+			if req.Variables["fieldName"] != "Status" {
+				t.Fatalf("expected fieldName=Status, got %#v", req.Variables["fieldName"])
+			}
 			switch after {
 			case "":
 				_, _ = w.Write([]byte(`{"data":{"node":{"items":{"nodes":[
-{"id":"ITEM_1","fieldValues":{"nodes":[{"__typename":"ProjectV2ItemFieldSingleSelectValue","name":"Todo","optionId":"todo","field":{"__typename":"ProjectV2SingleSelectField","id":"PVTSSF_status","name":"Status"}}]},"content":{"__typename":"Issue","id":"ISSUE_1","number":1,"title":"First","body":"Primary body","url":"https://github.com/octo-org/repo/issues/1","state":"OPEN","createdAt":"2025-01-01T00:00:00Z","updatedAt":"2025-01-02T00:00:00Z","repository":{"name":"repo","owner":{"login":"octo-org"}},"labels":{"nodes":[{"name":"Bug"}]},"blockedBy":{"nodes":[{"id":"ISSUE_9","number":9,"url":"https://github.com/octo-org/repo/issues/9","state":"OPEN","repository":{"name":"repo","owner":{"login":"octo-org"}},"projectItems":{"nodes":[{"id":"ITEM_9","project":{"id":"PVT_proj"},"fieldValues":{"nodes":[{"__typename":"ProjectV2ItemFieldSingleSelectValue","name":"Done","optionId":"done","field":{"__typename":"ProjectV2SingleSelectField","id":"PVTSSF_status","name":"Status"}}]}}]}},{"id":"ISSUE_10","number":10,"url":"https://github.com/octo-org/repo/issues/10","state":"OPEN","repository":{"name":"repo","owner":{"login":"octo-org"}},"projectItems":{"nodes":[]}}]}}},
-{"id":"ITEM_other","fieldValues":{"nodes":[{"__typename":"ProjectV2ItemFieldSingleSelectValue","name":"Todo","optionId":"todo","field":{"__typename":"ProjectV2SingleSelectField","id":"PVTSSF_status","name":"Status"}}]},"content":{"__typename":"Issue","id":"ISSUE_other","number":30,"title":"Other repo","body":"","url":"https://github.com/other/repo/issues/30","state":"OPEN","createdAt":"2025-01-01T00:00:00Z","updatedAt":"2025-01-01T01:00:00Z","repository":{"name":"repo","owner":{"login":"other"}},"labels":{"nodes":[]},"blockedBy":{"nodes":[]}}},
-{"id":"ITEM_pr","fieldValues":{"nodes":[{"__typename":"ProjectV2ItemFieldSingleSelectValue","name":"Todo","optionId":"todo","field":{"__typename":"ProjectV2SingleSelectField","id":"PVTSSF_status","name":"Status"}}]},"content":{"__typename":"PullRequest","id":"PR_1"}}
+	{"id":"ITEM_1","fieldValueByName":{"__typename":"ProjectV2ItemFieldSingleSelectValue","name":"Todo","optionId":"todo","field":{"__typename":"ProjectV2SingleSelectField","id":"PVTSSF_status","name":"Status"}},"content":{"__typename":"Issue","id":"ISSUE_1","number":1,"title":"First","body":"Primary body","url":"https://github.com/octo-org/repo/issues/1","state":"OPEN","createdAt":"2025-01-01T00:00:00Z","updatedAt":"2025-01-02T00:00:00Z","repository":{"name":"repo","owner":{"login":"octo-org"}},"labels":{"nodes":[{"name":"Bug"}]},"blockedBy":{"nodes":[{"id":"ISSUE_9","number":9,"url":"https://github.com/octo-org/repo/issues/9","state":"OPEN","repository":{"name":"repo","owner":{"login":"octo-org"}}},{"id":"ISSUE_10","number":10,"url":"https://github.com/octo-org/repo/issues/10","state":"OPEN","repository":{"name":"repo","owner":{"login":"octo-org"}}}]}}},
+	{"id":"ITEM_other","fieldValueByName":{"__typename":"ProjectV2ItemFieldSingleSelectValue","name":"Todo","optionId":"todo","field":{"__typename":"ProjectV2SingleSelectField","id":"PVTSSF_status","name":"Status"}},"content":{"__typename":"Issue","id":"ISSUE_other","number":30,"title":"Other repo","body":"","url":"https://github.com/other/repo/issues/30","state":"OPEN","createdAt":"2025-01-01T00:00:00Z","updatedAt":"2025-01-01T01:00:00Z","repository":{"name":"repo","owner":{"login":"other"}},"labels":{"nodes":[]},"blockedBy":{"nodes":[]}}},
+	{"id":"ITEM_pr","fieldValueByName":{"__typename":"ProjectV2ItemFieldSingleSelectValue","name":"Todo","optionId":"todo","field":{"__typename":"ProjectV2SingleSelectField","id":"PVTSSF_status","name":"Status"}},"content":{"__typename":"PullRequest","id":"PR_1"}}
 ],"pageInfo":{"hasNextPage":true,"endCursor":"c1"}}}}}`))
 			case "c1":
 				_, _ = w.Write([]byte(`{"data":{"node":{"items":{"nodes":[
-{"id":"ITEM_2","fieldValues":{"nodes":[{"__typename":"ProjectV2ItemFieldSingleSelectValue","name":"In Progress","optionId":"ip","field":{"__typename":"ProjectV2SingleSelectField","id":"PVTSSF_status","name":"Status"}}]},"content":{"__typename":"Issue","id":"ISSUE_2","number":2,"title":"Second","body":"","url":"https://github.com/octo-org/repo/issues/2","state":"OPEN","createdAt":"2025-01-03T00:00:00Z","updatedAt":"2025-01-04T00:00:00Z","repository":{"name":"repo","owner":{"login":"octo-org"}},"labels":{"nodes":[]},"blockedBy":{"nodes":[]}}},
-{"id":"ITEM_draft","fieldValues":{"nodes":[{"__typename":"ProjectV2ItemFieldSingleSelectValue","name":"Todo","optionId":"todo","field":{"__typename":"ProjectV2SingleSelectField","id":"PVTSSF_status","name":"Status"}}]},"content":{"__typename":"DraftIssue","id":"DI_1"}}
+	{"id":"ITEM_2","fieldValueByName":{"__typename":"ProjectV2ItemFieldSingleSelectValue","name":"In Progress","optionId":"ip","field":{"__typename":"ProjectV2SingleSelectField","id":"PVTSSF_status","name":"Status"}},"content":{"__typename":"Issue","id":"ISSUE_2","number":2,"title":"Second","body":"","url":"https://github.com/octo-org/repo/issues/2","state":"OPEN","createdAt":"2025-01-03T00:00:00Z","updatedAt":"2025-01-04T00:00:00Z","repository":{"name":"repo","owner":{"login":"octo-org"}},"labels":{"nodes":[]},"blockedBy":{"nodes":[]}}},
+	{"id":"ITEM_draft","fieldValueByName":{"__typename":"ProjectV2ItemFieldSingleSelectValue","name":"Todo","optionId":"todo","field":{"__typename":"ProjectV2SingleSelectField","id":"PVTSSF_status","name":"Status"}},"content":{"__typename":"DraftIssue","id":"DI_1"}}
 ],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`))
 			default:
 				t.Fatalf("unexpected after cursor %q", after)
 			}
+		case strings.Contains(req.Query, "ProjectItemStateScan"):
+			_, _ = w.Write([]byte(`{"data":{"node":{"items":{"nodes":[
+	{"id":"ITEM_9","fieldValueByName":{"__typename":"ProjectV2ItemFieldSingleSelectValue","name":"Done","optionId":"done","field":{"__typename":"ProjectV2SingleSelectField","id":"PVTSSF_status","name":"Status"}},"content":{"__typename":"Issue","id":"ISSUE_9","number":9,"repository":{"name":"repo","owner":{"login":"octo-org"}}}},
+	{"id":"ITEM_10","fieldValueByName":null,"content":{"__typename":"Issue","id":"ISSUE_10","number":10,"repository":{"name":"repo","owner":{"login":"octo-org"}}}}
+	],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`))
 		default:
 			t.Fatalf("unexpected query: %s", req.Query)
 		}
@@ -182,13 +190,13 @@ func TestFetchIssueStatesByIDs_UsesCachedItemIDsAndIssueFallback(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case strings.Contains(req.Query, "ResolveProject"):
-			_, _ = w.Write([]byte(`{"data":{"organization":{"login":"octo-org","projectV2":{"id":"PVT_proj","title":"Tracker","field":{"__typename":"ProjectV2SingleSelectField","id":"PVTSSF_status","name":"Status","options":[{"id":"todo","name":"Todo"},{"id":"ip","name":"In Progress"},{"id":"review","name":"Human Review"}]}}},"user":null,"repository":{"id":"R_repo","name":"repo","owner":{"login":"octo-org"}}}}`))
+			_, _ = w.Write([]byte(`{"data":{"repositoryOwner":{"login":"octo-org","projectV2":{"id":"PVT_proj","title":"Tracker","field":{"__typename":"ProjectV2SingleSelectField","id":"PVTSSF_status","name":"Status","options":[{"id":"todo","name":"Todo"},{"id":"ip","name":"In Progress"},{"id":"review","name":"Human Review"}]}}},"repository":{"id":"R_repo","name":"repo","owner":{"login":"octo-org"}}}}`))
 		case strings.Contains(req.Query, "ProjectItemStatesByItemIDs"):
 			itemStateCalls++
-			_, _ = w.Write([]byte(`{"data":{"nodes":[{"__typename":"ProjectV2Item","id":"ITEM_1","fieldValues":{"nodes":[{"__typename":"ProjectV2ItemFieldSingleSelectValue","name":"In Progress","optionId":"ip","field":{"__typename":"ProjectV2SingleSelectField","id":"PVTSSF_status","name":"Status"}}]},"content":{"__typename":"Issue","id":"ISSUE_1","number":1,"repository":{"name":"repo","owner":{"login":"octo-org"}}}}]}}`))
-		case strings.Contains(req.Query, "IssueStatesByIssueIDs"):
+			_, _ = w.Write([]byte(`{"data":{"nodes":[{"__typename":"ProjectV2Item","id":"ITEM_1","fieldValueByName":{"__typename":"ProjectV2ItemFieldSingleSelectValue","name":"In Progress","optionId":"ip","field":{"__typename":"ProjectV2SingleSelectField","id":"PVTSSF_status","name":"Status"}},"content":{"__typename":"Issue","id":"ISSUE_1","number":1,"repository":{"name":"repo","owner":{"login":"octo-org"}}}}]}}`))
+		case strings.Contains(req.Query, "ProjectItemStateScan"):
 			issueStateCalls++
-			_, _ = w.Write([]byte(`{"data":{"nodes":[{"__typename":"Issue","id":"ISSUE_2","number":2,"repository":{"name":"repo","owner":{"login":"octo-org"}},"projectItems":{"nodes":[{"id":"ITEM_2","project":{"id":"PVT_proj"},"fieldValues":{"nodes":[{"__typename":"ProjectV2ItemFieldSingleSelectValue","name":"Human Review","optionId":"review","field":{"__typename":"ProjectV2SingleSelectField","id":"PVTSSF_status","name":"Status"}}]}}]}}]}}`))
+			_, _ = w.Write([]byte(`{"data":{"node":{"items":{"nodes":[{"id":"ITEM_2","fieldValueByName":{"__typename":"ProjectV2ItemFieldSingleSelectValue","name":"Human Review","optionId":"review","field":{"__typename":"ProjectV2SingleSelectField","id":"PVTSSF_status","name":"Status"}},"content":{"__typename":"Issue","id":"ISSUE_2","number":2,"repository":{"name":"repo","owner":{"login":"octo-org"}}}}],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`))
 		default:
 			t.Fatalf("unexpected query: %s", req.Query)
 		}
@@ -228,5 +236,60 @@ func TestFetchIssueStatesByIDs_UsesCachedItemIDsAndIssueFallback(t *testing.T) {
 	}
 	if client.itemIDs["ISSUE_2"] != "ITEM_2" {
 		t.Fatalf("expected fallback refresh to cache project item id, got %#v", client.itemIDs)
+	}
+}
+
+func TestFetchIssueStatesByIDs_EvictsStaleItemCacheAndFallsBackToProjectScan(t *testing.T) {
+	var itemStateCalls, projectScanCalls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Query string `json:"query"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.Contains(req.Query, "ResolveProject"):
+			_, _ = w.Write([]byte(`{"data":{"repositoryOwner":{"login":"octo-org","projectV2":{"id":"PVT_proj","title":"Tracker","field":{"__typename":"ProjectV2SingleSelectField","id":"PVTSSF_status","name":"Status","options":[{"id":"todo","name":"Todo"},{"id":"ip","name":"In Progress"}]}}},"repository":{"id":"R_repo","name":"repo","owner":{"login":"octo-org"}}}}`))
+		case strings.Contains(req.Query, "ProjectItemStatesByItemIDs"):
+			itemStateCalls++
+			_, _ = w.Write([]byte(`{"data":{"nodes":[]}}`))
+		case strings.Contains(req.Query, "ProjectItemStateScan"):
+			projectScanCalls++
+			_, _ = w.Write([]byte(`{"data":{"node":{"items":{"nodes":[{"id":"ITEM_1_NEW","fieldValueByName":{"__typename":"ProjectV2ItemFieldSingleSelectValue","name":"In Progress","optionId":"ip","field":{"__typename":"ProjectV2SingleSelectField","id":"PVTSSF_status","name":"Status"}},"content":{"__typename":"Issue","id":"ISSUE_1","number":1,"repository":{"name":"repo","owner":{"login":"octo-org"}}}}],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`))
+		default:
+			t.Fatalf("unexpected query: %s", req.Query)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	client, err := NewFromConfig(config.TrackerConfig{
+		Timeout: 2 * time.Second,
+		Params: map[string]any{
+			"endpoint":       srv.URL,
+			"token":          "x",
+			"project_owner":  "octo-org",
+			"project_number": 7,
+			"repository":     "octo-org/repo",
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewFromConfig error: %v", err)
+	}
+	client.cacheItem("ISSUE_1", "ITEM_STALE")
+
+	issues, err := client.FetchIssueStatesByIDs(context.Background(), []string{"ISSUE_1"})
+	if err != nil {
+		t.Fatalf("FetchIssueStatesByIDs error: %v", err)
+	}
+	if itemStateCalls != 1 || projectScanCalls != 1 {
+		t.Fatalf("expected item lookup then project scan, got item=%d project=%d", itemStateCalls, projectScanCalls)
+	}
+	if len(issues) != 1 || issues[0].State != "In Progress" {
+		t.Fatalf("unexpected refreshed issues: %#v", issues)
+	}
+	if got := client.itemIDs["ISSUE_1"]; got != "ITEM_1_NEW" {
+		t.Fatalf("expected stale cache replacement, got %q", got)
 	}
 }

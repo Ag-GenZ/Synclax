@@ -12,9 +12,6 @@ services:
       target: anclax
     ports:
       - "2910:2910"
-    depends_on:
-      db:
-        condition: service_healthy
     volumes:
       - ./:/app
       - ${HOME}/.ssh:/root/.ssh:ro
@@ -23,6 +20,7 @@ services:
       MYAPP_ANCLAX_PG_DSN: postgres://postgres:postgres@db:5432/synclax
       MYAPP_SYMPHONY_WORKFLOW_PATH: /app/WORKFLOW.md
       LINEAR_API_KEY: ${LINEAR_API_KEY}
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
 
 volumes:
   db-data:

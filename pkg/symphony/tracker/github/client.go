@@ -146,21 +146,30 @@ func (c *Client) FetchIssueStatesByIDs(ctx context.Context, issueIDs []string) (
 	}
 
 	issuesByID := map[string]domain.Issue{}
-	itemIDs, uncached := c.cachedItemIDs(issueIDs)
-	if len(itemIDs) > 0 {
+	cachedByIssueID, missing := c.cachedItemIDs(issueIDs)
+	if len(cachedByIssueID) > 0 {
+		itemIDs := make([]string, 0, len(cachedByIssueID))
+		for _, itemID := range cachedByIssueID {
+			itemIDs = append(itemIDs, itemID)
+		}
+
 		cached, err := c.fetchIssueStatesByItemIDs(ctx, itemIDs)
 		if err != nil {
 			return nil, err
 		}
-		for _, issue := range cached {
-			issuesByID[issue.ID] = issue
+		foundItemIDs := make(map[string]struct{}, len(cached))
+		for _, result := range cached {
+			foundItemIDs[result.ItemID] = struct{}{}
+			issuesByID[result.Issue.ID] = result.Issue
 		}
-	}
-
-	missing := make([]string, 0, len(uncached))
-	for _, issueID := range uncached {
-		if _, ok := issuesByID[issueID]; !ok {
-			missing = append(missing, issueID)
+		for issueID, itemID := range cachedByIssueID {
+			if _, ok := issuesByID[issueID]; !ok {
+				missing = appendUniqueIssueID(missing, issueID)
+			}
+			if _, ok := foundItemIDs[itemID]; ok {
+				continue
+			}
+			c.evictItem(issueID)
 		}
 	}
 	if len(missing) > 0 {
@@ -248,9 +257,8 @@ func (c *Client) doGraphQL(ctx context.Context, query string, variables map[stri
 }
 
 type resolveProjectEnvelope struct {
-	Organization *projectOwnerNode `json:"organization"`
-	User         *projectOwnerNode `json:"user"`
-	Repository   *repositoryNode   `json:"repository"`
+	Owner      *projectOwnerNode `json:"repositoryOwner"`
+	Repository *repositoryNode   `json:"repository"`
 }
 
 type projectOwnerNode struct {
@@ -306,7 +314,7 @@ func (c *Client) resolveProject(ctx context.Context) error {
 		return errors.New("github repository is required and must exist")
 	}
 
-	project := pickProject(env.Organization, env.User)
+	project := pickProject(env.Owner)
 	if project == nil || strings.TrimSpace(project.ID) == "" {
 		return fmt.Errorf("github project v2 %s/%d was not found", c.projectOwner, c.projectNumber)
 	}
@@ -358,16 +366,12 @@ type pageInfo struct {
 }
 
 type projectItemNode struct {
-	ID          string               `json:"id"`
-	FieldValues fieldValueConnection `json:"fieldValues"`
-	Content     projectItemContent   `json:"content"`
+	ID               string                      `json:"id"`
+	StateValueByName *singleSelectFieldValueNode `json:"fieldValueByName"`
+	Content          projectItemContent          `json:"content"`
 }
 
-type fieldValueConnection struct {
-	Nodes []fieldValueNode `json:"nodes"`
-}
-
-type fieldValueNode struct {
+type singleSelectFieldValueNode struct {
 	Typename string `json:"__typename"`
 	Name     string `json:"name"`
 	OptionID string `json:"optionId"`
@@ -407,24 +411,11 @@ type labelConnection struct {
 }
 
 type blockedIssueNode struct {
-	ID           string                     `json:"id"`
-	Number       int                        `json:"number"`
-	URL          string                     `json:"url"`
-	State        string                     `json:"state"`
-	Repository   repositoryRef              `json:"repository"`
-	ProjectItems issueProjectItemConnection `json:"projectItems"`
-}
-
-type issueProjectItemConnection struct {
-	Nodes []issueProjectItemNode `json:"nodes"`
-}
-
-type issueProjectItemNode struct {
-	ID      string `json:"id"`
-	Project struct {
-		ID string `json:"id"`
-	} `json:"project"`
-	FieldValues fieldValueConnection `json:"fieldValues"`
+	ID         string        `json:"id"`
+	Number     int           `json:"number"`
+	URL        string        `json:"url"`
+	State      string        `json:"state"`
+	Repository repositoryRef `json:"repository"`
 }
 
 func (c *Client) fetchProjectIssues(ctx context.Context, stateNames []string) ([]domain.Issue, error) {
@@ -435,6 +426,7 @@ func (c *Client) fetchProjectIssues(ctx context.Context, stateNames []string) ([
 	for {
 		vars := map[string]any{
 			"projectId": c.projectID,
+			"fieldName": c.stateField,
 			"first":     c.pageSize,
 			"after":     nil,
 		}
@@ -470,7 +462,7 @@ func (c *Client) fetchProjectIssues(ctx context.Context, stateNames []string) ([
 		}
 		after = env.Node.Items.PageInfo.EndCursor
 	}
-	return all, nil
+	return c.hydrateBlockerStates(ctx, all)
 }
 
 func normalizeStates(states []string) map[string]struct{} {
@@ -493,7 +485,7 @@ func (c *Client) normalizeProjectItem(item projectItemNode, allowedStates map[st
 		return domain.Issue{}, false
 	}
 
-	state, optionID := c.extractState(item.FieldValues)
+	state, optionID := c.extractState(item.StateValueByName)
 	if state == "" {
 		return domain.Issue{}, false
 	}
@@ -556,7 +548,6 @@ func (c *Client) normalizeProjectItem(item projectItemNode, allowedStates map[st
 func (c *Client) normalizeBlocker(blocker blockedIssueNode) domain.BlockerRef {
 	id := strings.TrimSpace(blocker.ID)
 	identifier := c.issueIdentifier(blocker.Repository, blocker.Number)
-	state := c.resolveStateFromProjectItems(blocker.ProjectItems)
 
 	ref := domain.BlockerRef{}
 	if id != "" {
@@ -565,37 +556,69 @@ func (c *Client) normalizeBlocker(blocker blockedIssueNode) domain.BlockerRef {
 	if identifier != "" {
 		ref.Identifier = &identifier
 	}
-	if state != "" {
-		ref.State = &state
-	}
 	return ref
 }
 
-func (c *Client) resolveStateFromProjectItems(items issueProjectItemConnection) string {
-	for _, item := range items.Nodes {
-		if strings.TrimSpace(item.Project.ID) != c.projectID {
-			continue
+func (c *Client) hydrateBlockerStates(ctx context.Context, issues []domain.Issue) ([]domain.Issue, error) {
+	blockerIDs := make([]string, 0)
+	seen := map[string]struct{}{}
+	for _, issue := range issues {
+		for _, blocker := range issue.BlockedBy {
+			if blocker.ID == nil || blocker.State != nil {
+				continue
+			}
+			blockerID := strings.TrimSpace(*blocker.ID)
+			if blockerID == "" {
+				continue
+			}
+			if _, ok := seen[blockerID]; ok {
+				continue
+			}
+			seen[blockerID] = struct{}{}
+			blockerIDs = append(blockerIDs, blockerID)
 		}
-		state, optionID := c.extractState(item.FieldValues)
-		if state == "" {
-			continue
-		}
-		c.cacheOption(state, optionID)
-		return state
 	}
-	return ""
+	if len(blockerIDs) == 0 {
+		return issues, nil
+	}
+
+	states, err := c.fetchProjectIssueStatesByIssueIDs(ctx, blockerIDs)
+	if err != nil {
+		return nil, err
+	}
+	stateByID := make(map[string]string, len(states))
+	for _, issue := range states {
+		if strings.TrimSpace(issue.ID) == "" || strings.TrimSpace(issue.State) == "" {
+			continue
+		}
+		stateByID[issue.ID] = issue.State
+	}
+
+	for i := range issues {
+		for j := range issues[i].BlockedBy {
+			blockerID := issues[i].BlockedBy[j].ID
+			if blockerID == nil {
+				continue
+			}
+			state, ok := stateByID[strings.TrimSpace(*blockerID)]
+			if !ok {
+				continue
+			}
+			stateCopy := state
+			issues[i].BlockedBy[j].State = &stateCopy
+		}
+	}
+	return issues, nil
 }
 
-func (c *Client) extractState(values fieldValueConnection) (string, string) {
-	for _, value := range values.Nodes {
-		if value.Typename != "ProjectV2ItemFieldSingleSelectValue" {
-			continue
-		}
-		if strings.TrimSpace(value.Field.ID) == c.stateFieldID || strings.EqualFold(strings.TrimSpace(value.Field.Name), c.stateField) {
-			return strings.TrimSpace(value.Name), strings.TrimSpace(value.OptionID)
-		}
+func (c *Client) extractState(value *singleSelectFieldValueNode) (string, string) {
+	if value == nil || value.Typename != "ProjectV2ItemFieldSingleSelectValue" {
+		return "", ""
 	}
-	return "", ""
+	if strings.TrimSpace(value.Field.ID) != c.stateFieldID && !strings.EqualFold(strings.TrimSpace(value.Field.Name), c.stateField) {
+		return "", ""
+	}
+	return strings.TrimSpace(value.Name), strings.TrimSpace(value.OptionID)
 }
 
 type nodesProjectItemsEnvelope struct {
@@ -603,14 +626,22 @@ type nodesProjectItemsEnvelope struct {
 }
 
 type projectItemStateNode struct {
-	Typename    string               `json:"__typename"`
-	ID          string               `json:"id"`
-	Content     projectItemContent   `json:"content"`
-	FieldValues fieldValueConnection `json:"fieldValues"`
+	Typename         string                      `json:"__typename"`
+	ID               string                      `json:"id"`
+	Content          projectItemContent          `json:"content"`
+	StateValueByName *singleSelectFieldValueNode `json:"fieldValueByName"`
 }
 
-func (c *Client) fetchIssueStatesByItemIDs(ctx context.Context, itemIDs []string) ([]domain.Issue, error) {
-	raw, err := c.doGraphQL(ctx, projectItemStatesByItemIDsQuery, map[string]any{"ids": itemIDs})
+type itemStateResult struct {
+	ItemID string
+	Issue  domain.Issue
+}
+
+func (c *Client) fetchIssueStatesByItemIDs(ctx context.Context, itemIDs []string) ([]itemStateResult, error) {
+	raw, err := c.doGraphQL(ctx, projectItemStatesByItemIDsQuery, map[string]any{
+		"ids":       itemIDs,
+		"fieldName": c.stateField,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -619,7 +650,7 @@ func (c *Client) fetchIssueStatesByItemIDs(ctx context.Context, itemIDs []string
 		return nil, &tracker.Error{Category: "github_unknown_payload", Err: err}
 	}
 
-	out := make([]domain.Issue, 0, len(env.Nodes))
+	out := make([]itemStateResult, 0, len(env.Nodes))
 	for _, node := range env.Nodes {
 		if node.Typename != "ProjectV2Item" || node.Content.Typename != "Issue" {
 			continue
@@ -627,77 +658,107 @@ func (c *Client) fetchIssueStatesByItemIDs(ctx context.Context, itemIDs []string
 		if !c.matchesRepository(node.Content.Repository) {
 			continue
 		}
-		state, optionID := c.extractState(node.FieldValues)
+		state, optionID := c.extractState(node.StateValueByName)
 		if state == "" {
 			continue
 		}
 		c.cacheItem(node.Content.ID, node.ID)
 		c.cacheOption(state, optionID)
-		out = append(out, domain.Issue{
-			ID:         node.Content.ID,
-			Identifier: c.issueIdentifier(node.Content.Repository, node.Content.Number),
-			State:      state,
+		out = append(out, itemStateResult{
+			ItemID: node.ID,
+			Issue: domain.Issue{
+				ID:         node.Content.ID,
+				Identifier: c.issueIdentifier(node.Content.Repository, node.Content.Number),
+				State:      state,
+			},
 		})
 	}
 	return out, nil
 }
 
-type nodesIssuesEnvelope struct {
-	Nodes []issueStateNode `json:"nodes"`
-}
-
-type issueStateNode struct {
-	Typename     string                     `json:"__typename"`
-	ID           string                     `json:"id"`
-	Number       int                        `json:"number"`
-	Repository   repositoryRef              `json:"repository"`
-	ProjectItems issueProjectItemConnection `json:"projectItems"`
-}
-
 func (c *Client) fetchIssueStatesByIssueIDs(ctx context.Context, issueIDs []string) ([]domain.Issue, error) {
-	raw, err := c.doGraphQL(ctx, issueStatesByIssueIDsQuery, map[string]any{"ids": issueIDs})
-	if err != nil {
-		return nil, err
-	}
-	var env nodesIssuesEnvelope
-	if err := json.Unmarshal(raw, &env); err != nil {
-		return nil, &tracker.Error{Category: "github_unknown_payload", Err: err}
+	return c.fetchProjectIssueStatesByIssueIDs(ctx, issueIDs)
+}
+
+func (c *Client) fetchProjectIssueStatesByIssueIDs(ctx context.Context, issueIDs []string) ([]domain.Issue, error) {
+	if len(issueIDs) == 0 {
+		return []domain.Issue{}, nil
 	}
 
-	out := make([]domain.Issue, 0, len(env.Nodes))
-	for _, node := range env.Nodes {
-		if node.Typename != "Issue" {
+	targets := make(map[string]struct{}, len(issueIDs))
+	for _, issueID := range issueIDs {
+		issueID = strings.TrimSpace(issueID)
+		if issueID == "" {
 			continue
 		}
-		if !c.matchesRepository(node.Repository) {
-			continue
+		targets[issueID] = struct{}{}
+	}
+	if len(targets) == 0 {
+		return []domain.Issue{}, nil
+	}
+
+	issuesByID := make(map[string]domain.Issue, len(targets))
+	after := ""
+	for {
+		vars := map[string]any{
+			"projectId": c.projectID,
+			"fieldName": c.stateField,
+			"first":     c.pageSize,
+			"after":     nil,
 		}
-		state := ""
-		itemID := ""
-		for _, item := range node.ProjectItems.Nodes {
-			if strings.TrimSpace(item.Project.ID) != c.projectID {
+		if after != "" {
+			vars["after"] = after
+		}
+
+		raw, err := c.doGraphQL(ctx, projectItemStateScanQuery, vars)
+		if err != nil {
+			return nil, err
+		}
+		var env projectItemsEnvelope
+		if err := json.Unmarshal(raw, &env); err != nil {
+			return nil, &tracker.Error{Category: "github_unknown_payload", Err: err}
+		}
+		if env.Node == nil {
+			return nil, &tracker.Error{Category: "github_unknown_payload", Err: errors.New("missing project node")}
+		}
+
+		for _, item := range env.Node.Items.Nodes {
+			if item.Content.Typename != "Issue" || !c.matchesRepository(item.Content.Repository) {
 				continue
 			}
-			stateName, optionID := c.extractState(item.FieldValues)
-			if stateName == "" {
+			issueID := strings.TrimSpace(item.Content.ID)
+			if _, ok := targets[issueID]; !ok {
 				continue
 			}
-			state = stateName
-			itemID = item.ID
-			c.cacheOption(stateName, optionID)
+
+			state, optionID := c.extractState(item.StateValueByName)
+			if state == "" {
+				continue
+			}
+			c.cacheItem(issueID, item.ID)
+			c.cacheOption(state, optionID)
+			issuesByID[issueID] = domain.Issue{
+				ID:         issueID,
+				Identifier: c.issueIdentifier(item.Content.Repository, item.Content.Number),
+				State:      state,
+			}
+		}
+
+		if len(issuesByID) == len(targets) || !env.Node.Items.PageInfo.HasNextPage {
 			break
 		}
-		if state == "" {
-			continue
+		if strings.TrimSpace(env.Node.Items.PageInfo.EndCursor) == "" {
+			return nil, &tracker.Error{Category: "github_missing_end_cursor", Err: errors.New("missing endCursor")}
 		}
-		if itemID != "" {
-			c.cacheItem(node.ID, itemID)
+		after = env.Node.Items.PageInfo.EndCursor
+	}
+
+	out := make([]domain.Issue, 0, len(issueIDs))
+	for _, issueID := range issueIDs {
+		issueID = strings.TrimSpace(issueID)
+		if issue, ok := issuesByID[issueID]; ok && strings.TrimSpace(issue.State) != "" {
+			out = append(out, issue)
 		}
-		out = append(out, domain.Issue{
-			ID:         node.ID,
-			Identifier: c.issueIdentifier(node.Repository, node.Number),
-			State:      state,
-		})
 	}
 	return out, nil
 }
@@ -758,6 +819,16 @@ func (c *Client) cacheItem(issueID, itemID string) {
 	c.mu.Unlock()
 }
 
+func (c *Client) evictItem(issueID string) {
+	issueID = strings.TrimSpace(issueID)
+	if issueID == "" {
+		return
+	}
+	c.mu.Lock()
+	delete(c.itemIDs, issueID)
+	c.mu.Unlock()
+}
+
 func (c *Client) cacheOption(state, optionID string) {
 	state = strings.TrimSpace(state)
 	optionID = strings.TrimSpace(optionID)
@@ -771,26 +842,34 @@ func (c *Client) cacheOption(state, optionID string) {
 	c.mu.Unlock()
 }
 
-func (c *Client) cachedItemIDs(issueIDs []string) ([]string, []string) {
+func (c *Client) cachedItemIDs(issueIDs []string) (map[string]string, []string) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	itemIDs := make([]string, 0, len(issueIDs))
+	itemIDs := make(map[string]string, len(issueIDs))
 	missing := make([]string, 0, len(issueIDs))
-	seen := map[string]struct{}{}
 	for _, issueID := range issueIDs {
 		itemID, ok := c.itemIDs[issueID]
 		if !ok || strings.TrimSpace(itemID) == "" {
-			missing = append(missing, issueID)
+			missing = appendUniqueIssueID(missing, issueID)
 			continue
 		}
-		if _, ok := seen[itemID]; ok {
-			continue
-		}
-		seen[itemID] = struct{}{}
-		itemIDs = append(itemIDs, itemID)
+		itemIDs[issueID] = itemID
 	}
 	return itemIDs, missing
+}
+
+func appendUniqueIssueID(ids []string, issueID string) []string {
+	issueID = strings.TrimSpace(issueID)
+	if issueID == "" {
+		return ids
+	}
+	for _, existing := range ids {
+		if existing == issueID {
+			return ids
+		}
+	}
+	return append(ids, issueID)
 }
 
 func ctxBackground() context.Context {

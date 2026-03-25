@@ -9,7 +9,7 @@ dev:
 	docker-compose up
 
 reload:
-	docker-compose restart dev
+	docker-compose restart app
 
 db:
 	psql "postgresql://postgres:postgres@localhost:5432/postgres?sslmode=disable"

@@ -3,37 +3,38 @@ package github
 const (
 	resolveProjectQuery = `
 query ResolveProject($projectOwner: String!, $projectNumber: Int!, $repoOwner: String!, $repoName: String!, $fieldName: String!) {
-  organization(login: $projectOwner) {
+  repositoryOwner(login: $projectOwner) {
     login
-    projectV2(number: $projectNumber) {
-      id
-      title
-      field(name: $fieldName) {
-        __typename
-        ... on ProjectV2SingleSelectField {
-          id
-          name
-          options {
+    ... on Organization {
+      projectV2(number: $projectNumber) {
+        id
+        title
+        field(name: $fieldName) {
+          __typename
+          ... on ProjectV2SingleSelectField {
             id
             name
+            options {
+              id
+              name
+            }
           }
         }
       }
     }
-  }
-  user(login: $projectOwner) {
-    login
-    projectV2(number: $projectNumber) {
-      id
-      title
-      field(name: $fieldName) {
-        __typename
-        ... on ProjectV2SingleSelectField {
-          id
-          name
-          options {
+    ... on User {
+      projectV2(number: $projectNumber) {
+        id
+        title
+        field(name: $fieldName) {
+          __typename
+          ... on ProjectV2SingleSelectField {
             id
             name
+            options {
+              id
+              name
+            }
           }
         }
       }
@@ -49,24 +50,22 @@ query ResolveProject($projectOwner: String!, $projectNumber: Int!, $repoOwner: S
 }`
 
 	projectItemsQuery = `
-query ProjectItems($projectId: ID!, $first: Int!, $after: String) {
+query ProjectItems($projectId: ID!, $fieldName: String!, $first: Int!, $after: String) {
   node(id: $projectId) {
     ... on ProjectV2 {
       items(first: $first, after: $after) {
         nodes {
           id
-          fieldValues(first: 20) {
-            nodes {
-              __typename
-              ... on ProjectV2ItemFieldSingleSelectValue {
-                name
-                optionId
-                field {
-                  __typename
-                  ... on ProjectV2SingleSelectField {
-                    id
-                    name
-                  }
+          fieldValueByName(name: $fieldName) {
+            __typename
+            ... on ProjectV2ItemFieldSingleSelectValue {
+              name
+              optionId
+              field {
+                __typename
+                ... on ProjectV2SingleSelectField {
+                  id
+                  name
                 }
               }
             }
@@ -111,30 +110,6 @@ query ProjectItems($projectId: ID!, $first: Int!, $after: String) {
                       login
                     }
                   }
-                  projectItems(first: 20, includeArchived: false) {
-                    nodes {
-                      id
-                      project {
-                        id
-                      }
-                      fieldValues(first: 20) {
-                        nodes {
-                          __typename
-                          ... on ProjectV2ItemFieldSingleSelectValue {
-                            name
-                            optionId
-                            field {
-                              __typename
-                              ... on ProjectV2SingleSelectField {
-                                id
-                                name
-                              }
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
                 }
               }
             }
@@ -150,23 +125,21 @@ query ProjectItems($projectId: ID!, $first: Int!, $after: String) {
 }`
 
 	projectItemStatesByItemIDsQuery = `
-query ProjectItemStatesByItemIDs($ids: [ID!]!) {
+query ProjectItemStatesByItemIDs($ids: [ID!]!, $fieldName: String!) {
   nodes(ids: $ids) {
     __typename
     ... on ProjectV2Item {
       id
-      fieldValues(first: 20) {
-        nodes {
-          __typename
-          ... on ProjectV2ItemFieldSingleSelectValue {
-            name
-            optionId
-            field {
-              __typename
-              ... on ProjectV2SingleSelectField {
-                id
-                name
-              }
+      fieldValueByName(name: $fieldName) {
+        __typename
+        ... on ProjectV2ItemFieldSingleSelectValue {
+          name
+          optionId
+          field {
+            __typename
+            ... on ProjectV2SingleSelectField {
+              id
+              name
             }
           }
         }
@@ -188,41 +161,44 @@ query ProjectItemStatesByItemIDs($ids: [ID!]!) {
   }
 }`
 
-	issueStatesByIssueIDsQuery = `
-query IssueStatesByIssueIDs($ids: [ID!]!) {
-  nodes(ids: $ids) {
-    __typename
-    ... on Issue {
-      id
-      number
-      repository {
-        name
-        owner {
-          login
-        }
-      }
-      projectItems(first: 20, includeArchived: false) {
+	projectItemStateScanQuery = `
+query ProjectItemStateScan($projectId: ID!, $fieldName: String!, $first: Int!, $after: String) {
+  node(id: $projectId) {
+    ... on ProjectV2 {
+      items(first: $first, after: $after) {
         nodes {
           id
-          project {
-            id
-          }
-          fieldValues(first: 20) {
-            nodes {
-              __typename
-              ... on ProjectV2ItemFieldSingleSelectValue {
-                name
-                optionId
-                field {
-                  __typename
-                  ... on ProjectV2SingleSelectField {
-                    id
-                    name
-                  }
+          fieldValueByName(name: $fieldName) {
+            __typename
+            ... on ProjectV2ItemFieldSingleSelectValue {
+              name
+              optionId
+              field {
+                __typename
+                ... on ProjectV2SingleSelectField {
+                  id
+                  name
                 }
               }
             }
           }
+          content {
+            __typename
+            ... on Issue {
+              id
+              number
+              repository {
+                name
+                owner {
+                  login
+                }
+              }
+            }
+          }
+        }
+        pageInfo {
+          hasNextPage
+          endCursor
         }
       }
     }

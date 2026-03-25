@@ -14,11 +14,11 @@ import (
 )
 
 type Worker struct {
-	Tracker   tracker.Client
-	Workspace *workspace.Manager
-	Provider  provider.Provider
-	Renderer  *template.Renderer
-	Config    symphonycfg.EffectiveConfig
+	Tracker    tracker.Client
+	Workspace  *workspace.Manager
+	Provider   provider.Provider
+	Renderer   *template.Renderer
+	Config     symphonycfg.EffectiveConfig
 	WorkerHost *string
 }
 
@@ -122,7 +122,9 @@ func (w *Worker) RunAttempt(ctx context.Context, issue domain.Issue, attempt *in
 		if err != nil {
 			return Result{}, err
 		}
-		if len(refreshed) > 0 && refreshed[0].ID == issue.ID {
+		if len(refreshed) == 0 || refreshed[0].ID != issue.ID {
+			issue.State = ""
+		} else {
 			issue.State = refreshed[0].State
 		}
 
