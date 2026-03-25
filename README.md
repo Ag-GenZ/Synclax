@@ -10,7 +10,7 @@ It's an open-source implementation of [openai/symphony](https://github.com/opena
 
 ## Overview
 
-Synclax is a self-hosted system that bridges project tracking (e.g. Linear) with autonomous AI agents. It polls your tracker for open issues, spins up isolated agent workspaces, runs an AI agent (Codex) against each issue, and exposes the whole thing through a REST API and a real-time web dashboard.
+Synclax is a self-hosted system that bridges project tracking (for example Linear or GitHub Projects v2) with autonomous AI agents. It polls your tracker for open issues, spins up isolated agent workspaces, runs an AI agent (Codex) against each issue, and exposes the whole thing through a REST API and a real-time web dashboard.
 
 ```
 ┌─────────────────────────────────┐
@@ -69,7 +69,9 @@ Key capabilities:
 - Go
 - Node.js + pnpm
 - Git
-- A [Linear](https://linear.app) account + API key
+- A tracker setup:
+  - [Linear](https://linear.app) project + API key, or
+  - GitHub Projects v2 project + Personal Access Token
 - [Codex](https://github.com/openai/codex) installed on the machine that will execute agents
 
 ### Local one-command deploy
@@ -96,7 +98,7 @@ Open:
 - Dashboard: `http://localhost:3000`
 - API health: `http://localhost:2910/api/v1/health`
 
-If you have not configured Linear yet, edit:
+If you have not configured your tracker yet, edit:
 
 ```bash
 tmp/local-deploy/synclax.env
@@ -107,6 +109,7 @@ and set:
 ```env
 LINEAR_API_KEY=your_linear_api_key
 LINEAR_PROJECT_SLUG=your_linear_project_slug
+GITHUB_TOKEN=your_github_pat
 ```
 
 Then rerun:
@@ -177,7 +180,7 @@ volumes:
 cp WORKFLOW.md.example WORKFLOW.md
 ```
 
-Edit `WORKFLOW.md` YAML front matter — minimum required fields:
+Edit `WORKFLOW.md` YAML front matter. Linear minimum:
 
 ```yaml
 tracker:
@@ -195,6 +198,31 @@ agent:
   max_concurrent_agents: 3
   max_turns: 10
 ```
+
+GitHub Projects v2 minimum:
+
+```yaml
+tracker:
+  kind: github
+  token: $GITHUB_TOKEN
+  project_owner: your-org-or-user
+  project_number: 1
+  repository: your-org-or-user/your-repo
+  state_field: Status             # optional, defaults to Status
+  active_states: ["Todo", "In Progress"]
+  terminal_states: ["Done", "Closed"]
+```
+
+GitHub notes:
+
+- `state_field` must already exist on the Project v2 and must be a single-select field
+- The field option names must exactly match the workflow state names you use
+- v1 supports one Project v2 and one repository per workflow
+
+Example files:
+
+- Linear: `WORKFLOW.md.example`
+- GitHub Projects v2: `WORKFLOW.github.example.md`
 
 ### 3. Start
 
@@ -248,6 +276,7 @@ The dashboard shows running agents, retrying issues, completed work, and token u
 | `MYAPP_ANCLAX_PG_DSN` | PostgreSQL DSN | — |
 | `MYAPP_SYMPHONY_HTTP_PORT` | Symphony debug HTTP port | — |
 | `LINEAR_API_KEY` | Linear API key (if not inlined in WORKFLOW.md) | — |
+| `GITHUB_TOKEN` | GitHub token for Projects v2 workflows (if not inlined in WORKFLOW.md) | — |
 
 ### App Config (`app.yaml`)
 

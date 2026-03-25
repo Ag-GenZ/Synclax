@@ -70,15 +70,16 @@ exit 0
 	defer cancel()
 
 	srv := NewAppServer(AppServerOptions{
-		Command:        command,
-		ApprovalPolicy: "never",
-		ThreadSandbox:  "workspace-write",
-		SandboxPolicy:  map[string]any{"type": "workspaceWrite"},
-		ReadTimeout:    2 * time.Second,
-		TurnTimeout:    5 * time.Second,
-		LinearEndpoint: "http://example.com/graphql",
-		LinearAPIKey:   "x",
-		LinearTimeout:  2 * time.Second,
+		Command:            command,
+		ApprovalPolicy:     "never",
+		ThreadSandbox:      "workspace-write",
+		SandboxPolicy:      map[string]any{"type": "workspaceWrite"},
+		ReadTimeout:        2 * time.Second,
+		TurnTimeout:        5 * time.Second,
+		TrackerKind:        "linear",
+		LinearEndpoint:     "http://example.com/graphql",
+		LinearAPIKey:       "x",
+		DynamicToolTimeout: 2 * time.Second,
 	})
 
 	session, err := srv.StartSession(ctx, workspace, nil)
@@ -161,15 +162,16 @@ exit 0
 	defer cancel()
 
 	srv := NewAppServer(AppServerOptions{
-		Command:        command,
-		ApprovalPolicy: "on-request",
-		ThreadSandbox:  "workspace-write",
-		SandboxPolicy:  map[string]any{"type": "workspaceWrite"},
-		ReadTimeout:    2 * time.Second,
-		TurnTimeout:    5 * time.Second,
-		LinearEndpoint: "http://example.com/graphql",
-		LinearAPIKey:   "x",
-		LinearTimeout:  2 * time.Second,
+		Command:            command,
+		ApprovalPolicy:     "on-request",
+		ThreadSandbox:      "workspace-write",
+		SandboxPolicy:      map[string]any{"type": "workspaceWrite"},
+		ReadTimeout:        2 * time.Second,
+		TurnTimeout:        5 * time.Second,
+		TrackerKind:        "linear",
+		LinearEndpoint:     "http://example.com/graphql",
+		LinearAPIKey:       "x",
+		DynamicToolTimeout: 2 * time.Second,
 	})
 
 	session, err := srv.StartSession(ctx, workspace, nil)

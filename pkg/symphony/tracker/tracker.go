@@ -9,7 +9,7 @@ import (
 // Supported reports whether kind names a built-in tracker implementation.
 func Supported(kind string) bool {
 	switch kind {
-	case "linear":
+	case "github", "linear":
 		return true
 	default:
 		return false

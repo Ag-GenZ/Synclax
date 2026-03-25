@@ -16,6 +16,11 @@ Synclax 目前有两种完全不同的配置路径：
 
 这页的目标，是让你先判断自己在哪条路径上，再去改真正应该改的文件。
 
+当前仓库支持两种 tracker：
+
+- Linear
+- GitHub Projects v2
+
 ## 先判断你属于哪种启动方式
 
 ### 情况 A：你跑的是 `./scripts/deploy-local.sh`
@@ -25,7 +30,7 @@ Synclax 目前有两种完全不同的配置路径：
 这条路径下，最重要的不是手写配置文件，而是这几个脚本生成物：
 
 - `tmp/local-deploy/synclax.env`
-  你应该补 `LINEAR_API_KEY` 和 `LINEAR_PROJECT_SLUG` 的地方。
+  你应该补本地部署默认 tracker 凭据的地方。
 - `app.yaml`
   由脚本生成，告诉 API 去连哪个本地 DB、使用哪个 workflow。
 - `WORKFLOW.local.md`
@@ -44,14 +49,14 @@ Synclax 目前有两种完全不同的配置路径：
 
 - `app.yaml`
 - `WORKFLOW.md`
-- 环境变量 `MYAPP_*`、`LINEAR_API_KEY`
+- 环境变量 `MYAPP_*`、`LINEAR_API_KEY` / `GITHUB_TOKEN`
 - `docker-compose.yaml` / `docker-compose.full.yaml`
 
 下面的章节主要讲这两种路径分别该怎么改。
 
 ## A. 一键部署路径：你真正该改什么
 
-### 1) 改 Linear 凭据
+### 1) 改 tracker 凭据
 
 编辑：
 
@@ -59,7 +64,7 @@ Synclax 目前有两种完全不同的配置路径：
 tmp/local-deploy/synclax.env
 ```
 
-最少补这两个值：
+当前本地部署模板默认给的是 Linear 快捷路径，最少补这两个值：
 
 ```text
 LINEAR_API_KEY=your_linear_api_key
@@ -70,6 +75,24 @@ LINEAR_PROJECT_SLUG=your_linear_project_slug
 
 ```bash
 ./scripts/deploy-local.sh
+```
+
+如果你要改成 GitHub Projects v2 tracker，建议切到下文的手动路径维护 `WORKFLOW.md`。GitHub 模式至少需要：
+
+```yaml
+tracker:
+  kind: github
+  project_owner: your-org-or-user
+  project_number: 1
+  repository: your-org-or-user/your-repo
+  token: $GITHUB_TOKEN
+  state_field: Status
+```
+
+并提供：
+
+```bash
+export GITHUB_TOKEN='your_github_pat'
 ```
 
 ### 2) 理解脚本生成的 `app.yaml`
@@ -95,7 +118,7 @@ symphony:
 
 ### 3) 理解脚本生成的 `WORKFLOW.local.md`
 
-`deploy-local.sh` 也会生成 `WORKFLOW.local.md`。它会自动填入：
+`deploy-local.sh` 也会生成 `WORKFLOW.local.md`。默认模板会自动填入：
 
 - `tracker.api_key: $LINEAR_API_KEY`
 - `tracker.project_slug: $LINEAR_PROJECT_SLUG`
@@ -170,7 +193,7 @@ symphony:
 cp WORKFLOW.md.example WORKFLOW.md
 ```
 
-最少需要补这些字段：
+最少需要补一种 tracker 配置：
 
 ```yaml
 tracker:
@@ -183,12 +206,35 @@ worker:
     - "user@host.docker.internal:22"
 ```
 
+或者：
+
+```yaml
+tracker:
+  kind: github
+  token: $GITHUB_TOKEN
+  project_owner: your-org-or-user
+  project_number: 1
+  repository: your-org-or-user/your-repo
+  state_field: Status
+
+worker:
+  ssh_hosts:
+    - "user@host.docker.internal:22"
+```
+
 通常还要确认：
 
 - `codex.command`
 - `workspace.root`
 - `polling.interval_ms`
 - `server.port`
+
+GitHub Projects v2 额外要求：
+
+- `tracker.state_field` 必须已经存在于目标 Project v2 中
+- 该字段必须是 single-select
+- option 名称必须和工作流状态名完全一致
+- v1 只支持一个 repository
 
 <Callout type="tip">
   `WORKFLOW.md.example` 已经给了当前仓库支持的字段骨架。比起自己从零写，先从模板裁剪更稳。

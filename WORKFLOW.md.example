@@ -45,7 +45,7 @@ server:
   port: 8089
 ---
 
-You are working on a Linear issue.
+You are working on an issue.
 
 - Title: {{ issue.title }}
 - Identifier: {{ issue.identifier }}

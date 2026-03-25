@@ -41,14 +41,16 @@ description: 第一层排障路径：从现象出发快速定位。
 
 - `WORKFLOW.md` 路径不存在（或服务进程读不到）
 - `WORKFLOW.md` YAML front matter 解析失败（格式问题）
-- Linear 配置缺失：`tracker.api_key` / `tracker.project_slug`
+- tracker 配置缺失：
+  - Linear：`tracker.api_key` / `tracker.project_slug`
+  - GitHub：`tracker.token` / `tracker.project_owner` / `tracker.project_number` / `tracker.repository`
 - `codex.command` 为空或运行环境缺少 `codex` 命令
 
 最短修复路径：
 
 1. `cp WORKFLOW.md.example WORKFLOW.md`
-2. 设置 `LINEAR_API_KEY`
-3. 在 `WORKFLOW.md` 中填 `tracker.project_slug`
+2. 设置你所选 tracker 的 token（`LINEAR_API_KEY` 或 `GITHUB_TOKEN`）
+3. 在 `WORKFLOW.md` 中补齐该 tracker 的必填字段
 
 ## 4) Symphony 启动成功，但 Snapshot 一直空
 
@@ -65,7 +67,8 @@ description: 第一层排障路径：从现象出发快速定位。
 
 建议：
 
-- 确认 Linear 项目里确实存在 `Todo` / `In Progress` 的 issue
+- 确认 tracker 中确实存在 `Todo` / `In Progress` 的 issue
+- GitHub Projects v2 模式下，确认 `tracker.state_field` 对应的是现有 single-select 字段，且 option 名称与工作流状态名一致
 - 临时把 `polling.interval_ms` 设置小一些（比如 3000）便于观察
 
 ## 5) 你到底该用哪个 Snapshot？

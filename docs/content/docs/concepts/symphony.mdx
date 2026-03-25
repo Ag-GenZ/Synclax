@@ -101,18 +101,34 @@ Snapshot 是 Symphony 运行时状态的“可序列化结构”，核心用于 
 
 ## 3. 你需要准备什么（最小可用）
 
-### 3.1 Tracker：Linear
+### 3.1 Tracker：Linear 或 GitHub Projects v2
 
-要让 Symphony 真正开始派发任务，你至少需要：
+要让 Symphony 真正开始派发任务，你至少需要配置一个受支持的 tracker：
 
-- `tracker.project_slug`
-- `tracker.api_key`（推荐写 `$LINEAR_API_KEY`）
+- Linear
+  - `tracker.kind: linear`
+  - `tracker.project_slug`
+  - `tracker.api_key`（推荐写 `$LINEAR_API_KEY`）
+- GitHub Projects v2
+  - `tracker.kind: github`
+  - `tracker.project_owner`
+  - `tracker.project_number`
+  - `tracker.repository`
+  - `tracker.token`（推荐写 `$GITHUB_TOKEN`）
+  - 可选 `tracker.state_field`，默认 `Status`
 
 并在环境变量里设置：
 
 ```bash
 export LINEAR_API_KEY='你的 Linear API Key'
+export GITHUB_TOKEN='你的 GitHub PAT'
 ```
+
+GitHub 模式补充约束：
+
+- `tracker.state_field` 必须是目标 Project v2 中已存在的 single-select 字段
+- 该字段 option 名称必须直接使用工作流状态字符串
+- v1 只支持单个 repository
 
 ### 3.2 Codex app-server
 
