@@ -21,6 +21,12 @@ Synclax 目前有两种完全不同的配置路径：
 - Linear
 - GitHub Projects v2
 
+当前稳定支持一种 provider：
+
+- Codex
+
+先分清两个层次：`tracker` 决定任务从哪里来；`provider` 决定任务交给谁执行。GitHub 的接入在当前代码里属于 tracker，不是 provider。如果这两个词还在你脑子里打架，先看 [Tracker & Provider Matrix](/docs/getting-started/providers)。
+
 ## 先判断你属于哪种启动方式
 
 ### 情况 A：你跑的是 `./scripts/deploy-local.sh`
@@ -195,18 +201,23 @@ cp WORKFLOW.md.example WORKFLOW.md
 
 最少需要补一种 tracker 配置：
 
+如果你走 Linear：
+
 ```yaml
 tracker:
   kind: linear
   api_key: $LINEAR_API_KEY
   project_slug: your-project-id
 
+provider:
+  kind: codex
+
 worker:
   ssh_hosts:
     - "user@host.docker.internal:22"
 ```
 
-或者：
+如果你走 GitHub Projects v2：
 
 ```yaml
 tracker:
@@ -216,6 +227,9 @@ tracker:
   project_number: 1
   repository: your-org-or-user/your-repo
   state_field: Status
+
+provider:
+  kind: codex
 
 worker:
   ssh_hosts:
@@ -235,6 +249,15 @@ GitHub Projects v2 额外要求：
 - 该字段必须是 single-select
 - option 名称必须和工作流状态名完全一致
 - v1 只支持一个 repository
+
+当前 `provider.kind` 建议显式写成：
+
+```yaml
+provider:
+  kind: codex
+```
+
+即使省略它也会默认成 `codex`，但显式写出来更不容易把 “GitHub provider” 误解成一条单独配置线。
 
 <Callout type="tip">
   `WORKFLOW.md.example` 已经给了当前仓库支持的字段骨架。比起自己从零写，先从模板裁剪更稳。

@@ -14,9 +14,9 @@ description: 编排器/控制循环如何派发、执行与投影状态。
 
 Symphony 是一个**控制循环（control loop）**：
 
-1. 周期性从 Tracker（目前是 Linear）拉取候选 Issue
+1. 周期性从 Tracker（当前支持 Linear 和 GitHub Projects v2）拉取候选 Issue
 2. 根据调度规则挑选一些 Issue 分配给 Agent
-3. 为每个 Issue 准备 workspace，并驱动 Codex “turn” 一次次执行
+3. 为每个 Issue 准备 workspace，并驱动 Provider 一次次执行 turn
 4. 当 Issue 不再处于 active 状态或达到上限时停止，并按策略重试/清理
 
 对你来说，Symphony 最核心的输出就是一个可以给 UI 消费的 **Snapshot**（运行中/重试中/累计用量等）。
@@ -25,14 +25,27 @@ Symphony 是一个**控制循环（control loop）**：
 
 当你希望让一个 LLM Agent 自动推进工作时，通常会遇到这些现实问题：
 
-- **从哪里取任务？**（Tracker：Linear）
+- **从哪里取任务？**（Tracker：Linear / GitHub Projects v2）
 - **怎么做并发控制？**（全局并发、按状态并发、避免重复派发）
 - **怎么保证每个任务有稳定的工作目录？**（workspace 与 hook）
 - **怎么避免卡死？**（stall timeout）
 - **怎么把运行状态暴露给 UI？**（health + snapshot）
 - **怎么处理失败与重试？**（continuation/backoff）
 
-Symphony 不是“执行器”本身：它主要负责调度与生命周期；实际干活的是 Codex app-server 驱动下的 Agent。
+Symphony 不是“执行器”本身：它主要负责调度与生命周期；实际干活的是 Provider 背后的执行引擎。当前稳定实现是
+Codex app-server。
+
+## 1.5 先分清 Tracker / Provider / Dynamic Tool
+
+| 概念 | 代码位置 | 当前支持 | 作用 |
+|---|---|---|---|
+| Tracker | `pkg/symphony/tracker/*` | `linear`, `github` | 拉取 issue、刷新状态、处理 blocker |
+| Provider | `pkg/symphony/provider/*` | `codex` | 启动 session、执行 turn、产出 token/phase |
+| Dynamic Tool | `pkg/symphony/codex/dynamic_tool.go` | `linear_graphql`, `github_graphql` | 让 Codex 按 tracker 调用原始 API |
+
+如果你是因为 GitHub 接入才开始看这里，最重要的一句就是：
+
+**GitHub 当前是 tracker，不是 provider。**
 
 ## 2. 核心术语（建议先读完这节）
 
@@ -134,9 +147,20 @@ GitHub 模式补充约束：
 
 在 `WORKFLOW.md` 中：
 
+- `provider.kind` 当前默认为 `codex`
 - `codex.command` 默认为 `codex app-server`
 
 你要确保运行环境里存在该命令，并且它能在 workspace cwd 下工作。
+
+### 3.3 Dynamic tools：跟着 tracker 走
+
+- `tracker.kind: linear` 时，Codex 会拿到 `linear_graphql`
+- `tracker.kind: github` 时，Codex 会拿到 `github_graphql`
+
+所以“GitHub 的用法”实际上分成两层：
+
+1. 让 Symphony 能从 GitHub Projects v2 正确取任务
+2. 让 Codex 在执行时继续通过 `github_graphql` 读写 GitHub 数据
 
 ## 4. 运行与控制：你应该怎么“用” Symphony
 

@@ -5,7 +5,7 @@ description: 先理解 Synclax 能帮你做什么，以及它的控制循环。
 
 Synclax 是一个**可控的后台编排器（orchestrator）**：
 
-- 输入：Tracker（当前是 Linear）里的 Issue
+- 输入：Tracker（当前支持 Linear 和 GitHub Projects v2）里的 Issue
 - 输出：可被 UI 消费的运行时状态（Snapshot），以及稳定的 workspace 执行环境
 - 控制：明确的 start/stop（可启停），而不是靠人肉跑脚本
 
@@ -14,6 +14,8 @@ Synclax 是一个**可控的后台编排器（orchestrator）**：
 1. **它是一个控制循环**：从 Tracker 拉任务 → 调度 → 执行 → 生成 UI 状态投影
 2. **你主要通过 Web Console 使用它**：看状态、启停编排、理解“现在在做什么”
 3. **行为由 WORKFLOW.md 驱动**：轮询、并发、workspace、hooks、prompt、超时都在这里
+4. **`tracker` 和 `provider` 是两层配置**：`tracker` 决定任务从哪来，`provider` 决定任务交给谁执行；当前默认组合是
+   `linear/github + codex`
 
 ## 最短路径（按你的角色）
 
@@ -21,4 +23,5 @@ Synclax 是一个**可控的后台编排器（orchestrator）**：
 - 我想先理解它的理念（为什么这样设计）→ [哲学理念](/docs/concepts/philosophy)
 - 我想理解系统怎么组成/怎么流动 → [系统架构](/docs/concepts/architecture)
 - 我需要知道怎么配 `WORKFLOW.md` / 环境变量 → [Configuration](/docs/getting-started/configuration)
+- 我想先搞清 `tracker` / `provider` / `dynamic tool` 的组合 → [Tracker & Provider Matrix](/docs/getting-started/providers)
 - 我想理解 orchestrator 行为与 phase → [Symphony](/docs/concepts/symphony)

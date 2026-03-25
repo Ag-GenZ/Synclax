@@ -2,5 +2,5 @@
   "title": "Getting Started",
   "description": "第一次接触 Synclax 时的最短路径。",
   "root": true,
-  "pages": ["index", "overview", "quickstart", "configuration", "troubleshooting"]
+  "pages": ["index", "overview", "quickstart", "configuration", "providers", "troubleshooting"]
 }

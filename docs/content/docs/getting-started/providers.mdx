@@ -1,0 +1,169 @@
+---
+title: Tracker & Provider Matrix
+description: 先看清任务来源、执行后端和动态工具怎么组合，再决定该怎么接。
+---
+
+这一页专门解决一个很容易把人看晕的问题：
+
+**Synclax 里有 `tracker`，也有 `provider`，但它们不是一回事。**
+
+- `tracker`：任务从哪里来，当前支持 `linear` 和 `github`
+- `provider`：任务交给谁执行，当前稳定支持 `codex`
+- `dynamic tool`：provider 启动 agent 后，按 tracker 注入的辅助工具
+
+如果你是因为 PR #10 才开始看 GitHub 接入，这一页就是为了把关系先讲清楚。
+
+## 一张图先看懂
+
+`WORKFLOW.md`
+
+- `tracker.kind = linear | github`
+- `provider.kind = codex`
+- `worker.ssh_hosts = optional`
+- `hooks.* = optional`
+
+`runtime`
+
+- `tracker client`: `fetch issues / refresh states`
+- `provider`: `start session / run turn`
+- `dynamic tool`: `linear_graphql | github_graphql`
+
+## 当前支持矩阵
+
+| 层次 | 配置项 | 当前支持 | 作用 |
+|---|---|---|---|
+| 任务来源 | `tracker.kind` | `linear`, `github` | 决定 Symphony 去哪里拉 Issue、如何刷新状态 |
+| 执行后端 | `provider.kind` | `codex` | 决定 workspace 里的 agent 由谁启动、如何跑 turn |
+| 动态工具 | 自动注入 | `linear_graphql`, `github_graphql` | 让 Codex 能继续访问当前 tracker 的原始 API |
+
+PR #10 实际新增的是 **GitHub Projects v2 tracker**，不是新的 GitHub provider。只要 `tracker.kind: github`，现有 `provider.kind: codex` 就会自动拿到 `github_graphql`。
+
+## 先按目标选路径
+
+- 我要接 Linear
+- 我要接 GitHub Projects v2
+- 我要扩展新的 Provider
+
+## 我要接 Linear
+
+### 最小配置
+
+```yaml
+tracker:
+  kind: linear
+  endpoint: https://api.linear.app/graphql
+  api_key: $LINEAR_API_KEY
+  project_slug: your-project-slug
+  active_states: ["Todo", "In Progress"]
+  terminal_states: ["Done", "Closed"]
+
+provider:
+  kind: codex
+
+codex:
+  command: codex app-server
+```
+
+### 运行时行为
+
+- Symphony 用 Linear GraphQL 拉取候选 issue，并持续刷新 issue state
+- Codex provider 为每个 issue 建 workspace、启动 session、执行 turn
+- agent 自动拿到 `linear_graphql`
+
+### 产出能力
+
+- 任务来源：Linear
+- 执行后端：Codex
+- 动态工具：`linear_graphql`
+
+## 我要接 GitHub Projects v2
+
+### 最小配置
+
+```yaml
+tracker:
+  kind: github
+  endpoint: https://api.github.com/graphql
+  token: $GITHUB_TOKEN
+  project_owner: your-org-or-user
+  project_number: 1
+  repository: your-org-or-user/your-repo
+  state_field: Status
+  active_states: ["Todo", "In Progress"]
+  terminal_states: ["Done", "Closed", "Cancelled", "Canceled", "Duplicate"]
+
+provider:
+  kind: codex
+
+codex:
+  command: codex app-server
+```
+
+### 前置要求
+
+- 目标必须是 **GitHub Projects v2**
+- `tracker.state_field` 必须已经存在，默认值是 `Status`
+- 这个字段必须是 `single-select`
+- 字段 option 名称必须和 workflow 里的状态字符串完全一致
+- 当前一个 workflow 只支持一个 `repository`
+
+这里的模型一定要理解对：
+
+- Synclax 监听的是一个具体的 **GitHub Project v2**
+- 不是直接扫描整个仓库的 issue 列表
+- 也不是把 Project 里的所有 item 都接进来
+- 当前实现只处理这个 Project 里、并且属于 `tracker.repository` 指定仓库的 `Issue`
+- `DraftIssue`、`PullRequest`、其他仓库的 issue，都会被跳过
+
+### 运行时行为
+
+- Symphony 用 GitHub GraphQL 读取 Project v2 item，并把项目字段值映射成 issue state
+- blocker 判断也基于 Project v2 的状态字段，不是 issue open/closed
+- Codex provider 会自动拿到 `github_graphql`
+
+### GitHub 最容易误解的点
+
+1. `provider.kind` 还是 `codex`，不需要改成 `github`
+2. `github_graphql` 不是手动开启的，只要 `tracker.kind: github` 且鉴权可用就会自动出现
+3. `repository` 是必填，因为当前实现会把 Project v2 item 限定到单仓库 issue
+
+GitHub 这里读取的是 Project v2 里配置的 `state_field`。如果字段名、option 名或仓库绑定关系没对齐，看起来就会像“明明有 issue，但 Symphony 不派发”。
+
+## 动态工具什么时候能用
+
+### Linear
+
+- 前提：`tracker.kind: linear`
+- 必要鉴权：`tracker.api_key` 或环境变量 `LINEAR_API_KEY`
+- 暴露工具：`linear_graphql`
+
+### GitHub
+
+- 前提：`tracker.kind: github`
+- 必要鉴权：`tracker.token` 或环境变量 `GITHUB_TOKEN`
+- 暴露工具：`github_graphql`
+
+## 我要扩展新的 Provider
+
+这一节是面向仓库开发者的。
+
+1. 在 `pkg/symphony/provider/<your_kind>_adapter.go` 实现 `Provider` 和 `Session` 接口。
+2. 在 `pkg/symphony/provider/factory.go` 注册新的 `provider.kind`。
+3. 如果要新增配置项，补齐 `pkg/symphony/config/config.go` 的解析、默认值和校验。
+4. 决定是否需要和 tracker 联动的动态工具；如果需要，扩展 `pkg/symphony/codex/dynamic_tool.go` 或新的 provider 实现。
+5. 同步更新 [WORKFLOW.md Reference](/docs/reference/workflow) 和 [Developer Guide](/docs/developer/developer-guide)。
+
+当前代码库里，真正稳定可用的 provider 只有一个：
+
+```yaml
+provider:
+  kind: codex
+```
+
+所以如果你的目标只是“把 GitHub 接进来”，你应该改的是 `tracker`，不是 `provider`。
+
+## 继续往下看哪页
+
+- 想把配置落到文件里： [Configuration](/docs/getting-started/configuration)
+- 想查 `WORKFLOW.md` 字段契约： [WORKFLOW.md Reference](/docs/reference/workflow)
+- 想从代码层扩展新的 tracker/provider： [Developer Guide](/docs/developer/developer-guide)

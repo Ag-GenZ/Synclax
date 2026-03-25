@@ -24,6 +24,14 @@ Prompt template (Liquid)
 
 ## Front matter schema
 
+先记住一个总规则：
+
+- `tracker.*`：任务来源和状态同步
+- `provider.*`：执行后端
+- `codex.*`：`provider.kind: codex` 时的 provider 细节
+
+如果你是为了接 GitHub Projects v2，看的是 `tracker.kind: github` 这一段，不是 `provider.kind`。当前稳定 provider 只有 `codex`。
+
 ### `tracker`
 
 ```yaml
@@ -40,19 +48,27 @@ tracker:
 
 说明：
 
-- 支持的 `tracker.kind`
-  - `linear`：使用 `endpoint`、`api_key`、`project_slug`
-  - `github`：使用 `endpoint`、`token`、`project_owner`、`project_number`、`repository`，可选 `state_field`
-- 省略 `tracker.kind` 时，默认仍然是 `linear`
+Linear：
+
+- `tracker.kind: linear`
+- 使用字段：`endpoint`、`api_key`、`project_slug`
+- 省略 `tracker.kind` 时默认仍然是 `linear`
 - tracker 字段支持 `$ENV_VAR` 展开
-- GitHub 默认值：
-  - `endpoint: https://api.github.com/graphql`
-  - `state_field: Status`
-- GitHub v1 限制：
-  - 一个 workflow 只支持一个 repository
-  - `tracker.state_field` 必须已经存在于目标 Project v2 中
-  - `tracker.state_field` 必须是 single-select
-  - option 名称必须与工作流状态名完全一致
+
+GitHub Projects v2：
+
+- `tracker.kind: github`
+- 使用字段：`endpoint`、`token`、`project_owner`、`project_number`、`repository`
+- 可选字段：`state_field`
+- 默认值：`endpoint: https://api.github.com/graphql`、`state_field: Status`
+- 当前限制：一个 workflow 只支持一个 repository，且 `tracker.state_field` 必须已存在、必须是 single-select，option 名称必须与工作流状态名完全一致
+
+GitHub 这里的读取范围也要注意：
+
+- `project_owner + project_number` 指向一个具体的 Project v2
+- Synclax 先读取这个 Project 的 items
+- 然后只保留 `tracker.repository` 对应仓库的 `Issue`
+- `DraftIssue`、`PullRequest` 和其他仓库的 item 不会进入调度
 
 GitHub Projects v2 示例：
 
@@ -75,6 +91,12 @@ tracker:
 provider:
   kind: codex
 ```
+
+当前稳定支持的 `provider.kind` 只有：
+
+- `codex`
+
+省略 `provider.kind` 时会默认使用 `codex`。如果你想避免和 GitHub tracker 概念混淆，建议在 workflow 里显式写出来。
 
 ### `polling`
 
@@ -128,19 +150,13 @@ codex:
 
 当前支持的动态工具：
 
-- `linear_graphql`：使用 Symphony 的 Linear auth 执行原始 GraphQL 查询 / mutation
-- `github_graphql`：使用 Symphony 的 GitHub auth 执行原始 GraphQL 查询 / mutation
-
-要求：
-
 - `linear_graphql`
-  - `tracker.kind: linear`
-  - `tracker.endpoint` 指向 Linear GraphQL（默认 `https://api.linear.app/graphql`）
-  - `tracker.api_key` 已设置，或环境里存在 `LINEAR_API_KEY`
+  使用 Symphony 的 Linear auth 执行原始 GraphQL 查询 / mutation。
+  要求：`tracker.kind: linear`，`tracker.endpoint` 指向 Linear GraphQL（默认 `https://api.linear.app/graphql`），并且 `tracker.api_key` 已设置或环境里存在 `LINEAR_API_KEY`。
+
 - `github_graphql`
-  - `tracker.kind: github`
-  - `tracker.endpoint` 指向 GitHub GraphQL（默认 `https://api.github.com/graphql`）
-  - `tracker.token` 已设置，或环境里存在 `GITHUB_TOKEN`
+  使用 Symphony 的 GitHub auth 执行原始 GraphQL 查询 / mutation。
+  要求：`tracker.kind: github`，`tracker.endpoint` 指向 GitHub GraphQL（默认 `https://api.github.com/graphql`），并且 `tracker.token` 已设置或环境里存在 `GITHUB_TOKEN`。
 
 ## Prompt template（Liquid）
 
